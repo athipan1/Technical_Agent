@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate_agent:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install -r technical_agent/requirements.txt
+
+      - name: Run and Validate Script Output
+        run: |
+          python3 technical_agent/main.py AOT | jq -e '
+            .trend | type == "string" and
+            .rsi | type == "number" and
+            .signal | type == "string" and
+            .reasoning | type == "string"
+          '
