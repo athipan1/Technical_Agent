@@ -16,8 +16,7 @@ def analyze_stock(ticker):
         dict: A dictionary containing the analysis results.
     """
     try:
-        # Append .BK for stocks in the Stock Exchange of Thailand (SET)
-        stock_ticker = ticker.upper() + ".BK"
+        stock_ticker = ticker.upper()
 
         # Fetch 2 years of historical data
         data = yf.download(stock_ticker, period="2y", progress=False)
