@@ -6,6 +6,7 @@ import sys
 import json
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="yfinance")
 
 
 def analyze_stock(ticker):
@@ -37,6 +38,7 @@ def analyze_stock(ticker):
         # Calculate Technical Indicators
         data.ta.sma(length=200, append=True)
         data.ta.rsi(length=14, append=True)
+        data.ta.macd(append=True)
 
         # Get the latest data
         latest_data = data.iloc[-1]
@@ -56,17 +58,20 @@ def analyze_stock(ticker):
 
         # 2. Momentum Analysis
         rsi = latest_data['RSI_14']
+        macd_line = latest_data['MACD_12_26_9']
+        macd_signal = latest_data['MACDs_12_26_9']
 
         # 3. Signal Generation
         signal = "WAIT"
         reasoning = ""
 
         if trend == "Uptrend":
-            if rsi < 30:
+            if rsi < 30 and macd_line > macd_signal:
                 signal = "BUY"
                 reasoning = (
                     "The stock is in a clear uptrend and is currently "
-                    "oversold (RSI < 30), indicating a strong buying "
+                    "oversold (RSI < 30). The MACD crossover provides "
+                    "additional confirmation, indicating a strong buying "
                     "opportunity."
                 )
             elif rsi > 70:
@@ -80,22 +85,23 @@ def analyze_stock(ticker):
                 signal = "WAIT"
                 reasoning = (
                     "The stock is in an uptrend, but momentum is neutral. "
-                    "Wait for a clearer signal."
+                    "Wait for a clearer signal from RSI or MACD."
                 )
 
         elif trend == "Downtrend":
-            if rsi > 70:
+            if rsi > 70 and macd_line < macd_signal:
                 signal = "SELL"
                 reasoning = (
                     "The stock is in a clear downtrend and is currently "
-                    "overbought (RSI > 70), presenting a potential selling "
+                    "overbought (RSI > 70). The MACD crossover provides "
+                    "additional confirmation, presenting a potential selling "
                     "or shorting opportunity."
                 )
             else:
                 signal = "WAIT"
                 reasoning = (
                     "The stock is in a downtrend. It is not advisable to "
-                    "buy. Wait for a trend reversal."
+                    "buy. Wait for a trend reversal confirmed by indicators."
                 )
 
         else:  # Sideways
@@ -108,6 +114,8 @@ def analyze_stock(ticker):
         return {
             "trend": trend,
             "rsi": round(rsi, 2),
+            "macd_line": round(macd_line, 2),
+            "macd_signal": round(macd_signal, 2),
             "signal": signal,
             "reasoning": reasoning
         }
@@ -119,10 +127,15 @@ def analyze_stock(ticker):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(json.dumps({
-            "error": "Please provide a stock ticker as a "
-                     "command-line argument."
-        }))
-    else:
-        ticker = sys.argv[1]
-        result = analyze_stock(ticker)
-        print(json.dumps(result, indent=4))
+            "error": "Please provide a stock ticker."
+        }), file=sys.stderr)
+        sys.exit(1)
+
+    ticker = sys.argv[1]
+    result = analyze_stock(ticker)
+
+    if "error" in result:
+        print(json.dumps(result, indent=4), file=sys.stderr)
+        sys.exit(1)
+
+    print(json.dumps(result, indent=4))
