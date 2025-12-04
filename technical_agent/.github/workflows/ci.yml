@@ -30,9 +30,11 @@ jobs:
           flake8 technical_agent
       - name: Run and Validate Script Output
         run: |
-          python3 technical_agent/main.py AOT | jq -e '
+          python3 technical_agent/main.py AOT.BK | jq -e '
             .trend | type == "string" and
             .rsi | type == "number" and
+            .macd_line | type == "number" and
+            .macd_signal | type == "number" and
             .signal | type == "string" and
             .reasoning | type == "string"
           '
