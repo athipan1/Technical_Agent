@@ -1,9 +1,12 @@
 
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
+import pandas_ta as ta  # noqa: F401
 import sys
 import json
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 
 def analyze_stock(ticker):
     """
@@ -27,7 +30,8 @@ def analyze_stock(ticker):
 
         if data.empty:
             return {
-                "error": "No data found for the given ticker. It might be delisted or incorrect."
+                "error": "No data found for the given ticker. "
+                         "It might be delisted or incorrect."
             }
 
         # Calculate Technical Indicators
@@ -60,25 +64,45 @@ def analyze_stock(ticker):
         if trend == "Uptrend":
             if rsi < 30:
                 signal = "BUY"
-                reasoning = "The stock is in a clear uptrend and is currently oversold (RSI < 30), indicating a strong buying opportunity."
+                reasoning = (
+                    "The stock is in a clear uptrend and is currently "
+                    "oversold (RSI < 30), indicating a strong buying "
+                    "opportunity."
+                )
             elif rsi > 70:
                 signal = "WAIT"
-                reasoning = "The stock is in an uptrend but is currently overbought (RSI > 70). It's better to wait for a price correction before buying."
+                reasoning = (
+                    "The stock is in an uptrend but is currently "
+                    "overbought (RSI > 70). It's better to wait for a "
+                    "price correction before buying."
+                )
             else:
                 signal = "WAIT"
-                reasoning = "The stock is in an uptrend, but momentum is neutral. Wait for a clearer signal."
+                reasoning = (
+                    "The stock is in an uptrend, but momentum is neutral. "
+                    "Wait for a clearer signal."
+                )
 
         elif trend == "Downtrend":
             if rsi > 70:
                 signal = "SELL"
-                reasoning = "The stock is in a clear downtrend and is currently overbought (RSI > 70), presenting a potential selling or shorting opportunity."
+                reasoning = (
+                    "The stock is in a clear downtrend and is currently "
+                    "overbought (RSI > 70), presenting a potential selling "
+                    "or shorting opportunity."
+                )
             else:
                 signal = "WAIT"
-                reasoning = "The stock is in a downtrend. It is not advisable to buy. Wait for a trend reversal."
+                reasoning = (
+                    "The stock is in a downtrend. It is not advisable to "
+                    "buy. Wait for a trend reversal."
+                )
 
-        else: # Sideways
-            reasoning = "The stock is in a sideways trend. No clear entry or exit signal."
-
+        else:  # Sideways
+            reasoning = (
+                "The stock is in a sideways trend. No clear entry or exit "
+                "signal."
+            )
 
         # --- Output ---
         return {
@@ -91,9 +115,13 @@ def analyze_stock(ticker):
     except Exception as e:
         return {"error": str(e)}
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Please provide a stock ticker as a command-line argument."}))
+        print(json.dumps({
+            "error": "Please provide a stock ticker as a "
+                     "command-line argument."
+        }))
     else:
         ticker = sys.argv[1]
         result = analyze_stock(ticker)
