@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   validate_agent:
@@ -21,6 +24,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r technical_agent/requirements.txt
 
+      - name: Lint with flake8
+        run: |
+          pip install flake8
+          flake8 technical_agent
       - name: Run and Validate Script Output
         run: |
           python3 technical_agent/main.py AOT | jq -e '
