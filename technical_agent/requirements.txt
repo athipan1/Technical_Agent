@@ -1,3 +1,6 @@
 pandas
 pandas-ta
 yfinance
+fastapi
+uvicorn
+pydantic

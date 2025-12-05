@@ -30,4 +30,4 @@ jobs:
           flake8 technical_agent
       - name: Run and Validate Script Output
         run: |
-          python3 technical_agent/main.py AOT.BK | python3 -c "import sys, json; data = json.load(sys.stdin); assert isinstance(data['trend'], str); assert isinstance(data['rsi'], (int, float)); assert isinstance(data['macd_line'], (int, float)); assert isinstance(data['macd_signal'], (int, float)); assert isinstance(data['signal'], str); assert isinstance(data['reasoning'], str);"
+          python3 technical_agent/service.py AOT.BK | python3 -c "import sys, json; data = json.load(sys.stdin); assert isinstance(data['trend'], str); assert isinstance(data['rsi'], (int, float)); assert isinstance(data['macd_line'], (int, float)); assert isinstance(data['macd_signal'], (int, float)); assert isinstance(data['signal'], str); assert isinstance(data['reasoning'], str);"
