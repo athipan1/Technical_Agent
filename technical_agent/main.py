@@ -1,4 +1,5 @@
 
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
@@ -54,3 +55,7 @@ def analyze_ticker_endpoint(ticker: str):
 @app.get("/", include_in_schema=False)
 def root():
     return {"message": "Technical Analysis Agent is running."}
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8002)
