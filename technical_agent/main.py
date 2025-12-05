@@ -22,8 +22,8 @@ def analyze_stock(ticker):
     try:
         stock_ticker = ticker.upper()
 
-        # Fetch 2 years of historical data
-        data = yf.download(stock_ticker, period="2y", progress=False)
+        # Fetch 5 years of historical data
+        data = yf.download(stock_ticker, period="5y", progress=False)
 
         # If yfinance returns a MultiIndex, flatten it
         if isinstance(data.columns, pd.MultiIndex):
