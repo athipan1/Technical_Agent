@@ -5,7 +5,6 @@ import pandas_ta as ta  # noqa: F401
 import sys
 import json
 import warnings
-import math
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="yfinance")

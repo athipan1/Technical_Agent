@@ -4,12 +4,16 @@ from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
 
 # Import the business logic from service.py
-from technical_agent.service import analyze_stock, TickerNotFound, AnalysisError
+from technical_agent.service import (
+    analyze_stock,
+    TickerNotFound,
+    AnalysisError,
+)
 
 app = FastAPI(
     title="Technical Analysis Agent",
     description="An API for performing technical analysis on stock tickers.",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 
