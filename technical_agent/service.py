@@ -86,10 +86,12 @@ def analyze_stock(ticker):
     # 3. Signal Generation
     signal = "WAIT"
     reasoning = ""
+    confidence_score = 0.5 # Default score
 
     if trend == "Uptrend":
         if rsi < 30 and macd_line > macd_signal:
             signal = "BUY"
+            confidence_score = 0.8
             reasoning = (
                 "The stock is in a clear uptrend and is currently "
                 "oversold (RSI < 30). The MACD crossover provides "
@@ -98,6 +100,7 @@ def analyze_stock(ticker):
             )
         elif rsi > 70:
             signal = "WAIT"
+            confidence_score = 0.6
             reasoning = (
                 "The stock is in an uptrend but is currently "
                 "overbought (RSI > 70). It's better to wait for a "
@@ -113,6 +116,7 @@ def analyze_stock(ticker):
     elif trend == "Downtrend":
         if rsi > 70 and macd_line < macd_signal:
             signal = "SELL"
+            confidence_score = 0.8
             reasoning = (
                 "The stock is in a clear downtrend and is currently "
                 "overbought (RSI > 70). The MACD crossover provides "
@@ -132,14 +136,22 @@ def analyze_stock(ticker):
             "signal."
         )
 
+    # Map signal to the action required by the orchestrator
+    action_map = {"BUY": "buy", "SELL": "sell", "WAIT": "hold"}
+    final_action = action_map[signal]
+
     # --- Output ---
     return {
-        "trend": trend,
-        "rsi": round(rsi, 2),
-        "macd_line": round(macd_line, 2),
-        "macd_signal": round(macd_signal, 2),
-        "signal": signal,
-        "reasoning": reasoning
+        "current_price": round(price, 2),
+        "action": final_action,
+        "confidence_score": confidence_score,
+        "reason": reasoning, # Renamed from 'reasoning'
+        "indicators": {
+            "trend": trend,
+            "rsi": round(rsi, 2),
+            "macd_line": round(macd_line, 2),
+            "macd_signal": round(macd_signal, 2),
+        }
     }
 
 

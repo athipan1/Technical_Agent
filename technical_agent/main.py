@@ -1,6 +1,7 @@
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
 
@@ -17,23 +18,26 @@ app = FastAPI(
     version="1.0.0",
 )
 
+class TickerRequest(BaseModel):
+    """Defines the shape of the request body for the /analyze endpoint."""
+    ticker: str
 
-@app.get("/analyze/{ticker}",
-         summary="Analyze a stock ticker",
-         tags=["Analysis"])
-def analyze_ticker_endpoint(ticker: str):
+@app.post("/analyze",
+          summary="Analyze a stock ticker",
+          tags=["Analysis"])
+def analyze_ticker_endpoint(request: TickerRequest):
     """
     Analyzes a stock ticker and returns technical analysis indicators and a
     trading signal.
     """
     try:
-        analysis_data = analyze_stock(ticker)
+        analysis_data = analyze_stock(request.ticker)
 
-        # Construct the standardized success response
+        # Construct the response in the format expected by the Orchestrator
         response_payload = {
+            "agent_type": "technical",
+            "ticker": request.ticker.upper(),
             "status": "success",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "agent": "technical",
             "data": analysis_data
         }
         return JSONResponse(content=response_payload)
@@ -58,4 +62,5 @@ def root():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    # Correct the port to 8000 to match docker-compose
+    uvicorn.run(app, host="0.0.0.0", port=8000)
