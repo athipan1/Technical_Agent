@@ -86,10 +86,12 @@ def analyze_stock(ticker):
     # 3. Signal Generation
     signal = "WAIT"
     reasoning = ""
+    confidence_score = 0.5  # Default score
 
     if trend == "Uptrend":
         if rsi < 30 and macd_line > macd_signal:
             signal = "BUY"
+            confidence_score = 0.8
             reasoning = (
                 "The stock is in a clear uptrend and is currently "
                 "oversold (RSI < 30). The MACD crossover provides "
@@ -98,6 +100,7 @@ def analyze_stock(ticker):
             )
         elif rsi > 70:
             signal = "WAIT"
+            confidence_score = 0.6
             reasoning = (
                 "The stock is in an uptrend but is currently "
                 "overbought (RSI > 70). It's better to wait for a "
@@ -113,6 +116,7 @@ def analyze_stock(ticker):
     elif trend == "Downtrend":
         if rsi > 70 and macd_line < macd_signal:
             signal = "SELL"
+            confidence_score = 0.8
             reasoning = (
                 "The stock is in a clear downtrend and is currently "
                 "overbought (RSI > 70). The MACD crossover provides "
@@ -132,14 +136,32 @@ def analyze_stock(ticker):
             "signal."
         )
 
+    # Map signal to the action required by the orchestrator
+    action_map = {"BUY": "buy", "SELL": "sell", "WAIT": "hold"}
+    final_action = action_map[signal]
+
     # --- Output ---
+    # This dictionary is now used by the FastAPI app.
+    # The __main__ block will reformat this for the CI check.
     return {
+        # Orchestrator-facing fields
+        "current_price": round(price, 2),
+        "action": final_action,
+        "confidence_score": confidence_score,
+        "reason": reasoning,
+        "indicators": {
+            "trend": trend,
+            "rsi": round(rsi, 2),
+            "macd_line": round(macd_line, 2),
+            "macd_signal": round(macd_signal, 2),
+        },
+        # CI-facing fields (for easier reformatting)
         "trend": trend,
         "rsi": round(rsi, 2),
         "macd_line": round(macd_line, 2),
         "macd_signal": round(macd_signal, 2),
         "signal": signal,
-        "reasoning": reasoning
+        "reasoning": reasoning,
     }
 
 
@@ -153,7 +175,19 @@ if __name__ == "__main__":
     ticker_arg = sys.argv[1]
     try:
         analysis_result = analyze_stock(ticker_arg)
-        print(json.dumps(analysis_result, indent=4))
+
+        # Reformat the result for the CI check to match the expected flat structure
+        ci_output = {
+            "trend": analysis_result["trend"],
+            "rsi": analysis_result["rsi"],
+            "macd_line": analysis_result["macd_line"],
+            "macd_signal": analysis_result["macd_signal"],
+            "signal": analysis_result["signal"],
+            "reasoning": analysis_result["reasoning"]
+        }
+
+        print(json.dumps(ci_output, indent=4))
+
     except TickerNotFound as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
