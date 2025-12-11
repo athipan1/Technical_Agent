@@ -141,17 +141,27 @@ def analyze_stock(ticker):
     final_action = action_map[signal]
 
     # --- Output ---
+    # This dictionary is now used by the FastAPI app.
+    # The __main__ block will reformat this for the CI check.
     return {
+        # Orchestrator-facing fields
         "current_price": round(price, 2),
         "action": final_action,
         "confidence_score": confidence_score,
-        "reason": reasoning,  # Renamed from 'reasoning'
+        "reason": reasoning,
         "indicators": {
             "trend": trend,
             "rsi": round(rsi, 2),
             "macd_line": round(macd_line, 2),
             "macd_signal": round(macd_signal, 2),
-        }
+        },
+        # CI-facing fields (for easier reformatting)
+        "trend": trend,
+        "rsi": round(rsi, 2),
+        "macd_line": round(macd_line, 2),
+        "macd_signal": round(macd_signal, 2),
+        "signal": signal,
+        "reasoning": reasoning,
     }
 
 
@@ -165,7 +175,19 @@ if __name__ == "__main__":
     ticker_arg = sys.argv[1]
     try:
         analysis_result = analyze_stock(ticker_arg)
-        print(json.dumps(analysis_result, indent=4))
+
+        # Reformat the result for the CI check to match the expected flat structure
+        ci_output = {
+            "trend": analysis_result["trend"],
+            "rsi": analysis_result["rsi"],
+            "macd_line": analysis_result["macd_line"],
+            "macd_signal": analysis_result["macd_signal"],
+            "signal": analysis_result["signal"],
+            "reasoning": analysis_result["reasoning"]
+        }
+
+        print(json.dumps(ci_output, indent=4))
+
     except TickerNotFound as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
