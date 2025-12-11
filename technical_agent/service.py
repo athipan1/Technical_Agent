@@ -86,7 +86,7 @@ def analyze_stock(ticker):
     # 3. Signal Generation
     signal = "WAIT"
     reasoning = ""
-    confidence_score = 0.5 # Default score
+    confidence_score = 0.5  # Default score
 
     if trend == "Uptrend":
         if rsi < 30 and macd_line > macd_signal:
@@ -145,7 +145,7 @@ def analyze_stock(ticker):
         "current_price": round(price, 2),
         "action": final_action,
         "confidence_score": confidence_score,
-        "reason": reasoning, # Renamed from 'reasoning'
+        "reason": reasoning,  # Renamed from 'reasoning'
         "indicators": {
             "trend": trend,
             "rsi": round(rsi, 2),

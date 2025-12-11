@@ -13,5 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application's code
 COPY . .
 
-# Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Expose port 8002 to the Docker host
+EXPOSE 8002
+
+# Command to run the application on port 8002
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
