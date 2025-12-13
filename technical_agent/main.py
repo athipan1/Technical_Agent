@@ -2,7 +2,6 @@
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
-from datetime import datetime, timezone
 from pydantic import BaseModel
 
 # Import the business logic from service.py
@@ -18,12 +17,16 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
 class AnalyzeRequest(BaseModel):
     ticker: str
 
-@app.post("/analyze",
-         summary="Analyze a stock ticker",
-         tags=["Analysis"])
+
+@app.post(
+    "/analyze",
+    summary="Analyze a stock ticker",
+    tags=["Analysis"]
+)
 def analyze_ticker_endpoint(request: AnalyzeRequest):
     """
     Analyzes a stock ticker and returns technical analysis indicators and a
