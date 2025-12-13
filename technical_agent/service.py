@@ -28,7 +28,8 @@ def analyze_stock(ticker):
         ticker (str): The stock ticker symbol.
 
     Returns:
-        dict: A dictionary containing the analysis results.
+        dict: A dictionary containing the analysis results formatted for the
+              Orchestrator.
 
     Raises:
         TickerNotFound: If the ticker is not found or has no data.
@@ -84,62 +85,39 @@ def analyze_stock(ticker):
     macd_signal = latest_data['MACDs_12_26_9']
 
     # 3. Signal Generation
-    signal = "WAIT"
-    reasoning = ""
+    action = "hold"
+    confidence = 0.5  # Default confidence
 
     if trend == "Uptrend":
         if rsi < 30 and macd_line > macd_signal:
-            signal = "BUY"
-            reasoning = (
-                "The stock is in a clear uptrend and is currently "
-                "oversold (RSI < 30). The MACD crossover provides "
-                "additional confirmation, indicating a strong buying "
-                "opportunity."
-            )
+            action = "buy"
+            confidence = 0.85
         elif rsi > 70:
-            signal = "WAIT"
-            reasoning = (
-                "The stock is in an uptrend but is currently "
-                "overbought (RSI > 70). It's better to wait for a "
-                "price correction before buying."
-            )
+            action = "hold"
+            confidence = 0.6
         else:
-            signal = "WAIT"
-            reasoning = (
-                "The stock is in an uptrend, but momentum is neutral. "
-                "Wait for a clearer signal from RSI or MACD."
-            )
+            action = "hold"
+            confidence = 0.5
 
     elif trend == "Downtrend":
         if rsi > 70 and macd_line < macd_signal:
-            signal = "SELL"
-            reasoning = (
-                "The stock is in a clear downtrend and is currently "
-                "overbought (RSI > 70). The MACD crossover provides "
-                "additional confirmation, presenting a potential selling "
-                "or shorting opportunity."
-            )
+            action = "sell"
+            confidence = 0.85
         else:
-            signal = "WAIT"
-            reasoning = (
-                "The stock is in a downtrend. It is not advisable to "
-                "buy. Wait for a trend reversal confirmed by indicators."
-            )
+            action = "hold"
+            confidence = 0.6
 
-    else:  # Sideways
-        reasoning = (
-            "The stock is in a sideways trend. No clear entry or exit "
-            "signal."
-        )
-
-    # --- Output ---
+    # --- Output formatted for Orchestrator ---
     return {
-        "trend": trend,
-        "rsi": round(rsi, 2),
-        "macd_line": round(macd_line, 2),
-        "macd_signal": round(macd_signal, 2),
-        "signal": signal,
-        "reasoning": reasoning
+        "current_price": round(price, 2),
+        "action": action,
+        "confidence_score": confidence,
+        "indicators": {
+            "trend": trend,
+            "rsi": round(rsi, 2),
+            "macd_line": round(macd_line, 2),
+            "macd_signal": round(macd_signal, 2),
+        }
     }
 
 
@@ -152,8 +130,17 @@ if __name__ == "__main__":
 
     ticker_arg = sys.argv[1]
     try:
+        # For CLI, we need to flatten the structure for CI validation
         analysis_result = analyze_stock(ticker_arg)
-        print(json.dumps(analysis_result, indent=4))
+        cli_output = {
+            "trend": analysis_result["indicators"]["trend"],
+            "rsi": analysis_result["indicators"]["rsi"],
+            "macd_line": analysis_result["indicators"]["macd_line"],
+            "macd_signal": analysis_result["indicators"]["macd_signal"],
+            "signal": analysis_result["action"].upper(),
+            "reasoning": "CLI output does not generate reasoning."
+        }
+        print(json.dumps(cli_output, indent=4))
     except TickerNotFound as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
