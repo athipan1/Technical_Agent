@@ -1,11 +1,12 @@
 
-import yfinance as yf
-import pandas as pd
-import pandas_ta as ta  # noqa: F401
 import sys
 import json
 import warnings
+import pandas as pd
+import yfinance as yf
+import pandas_ta as ta  # noqa: F401
 
+# Suppress specific warnings for cleaner output
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="yfinance")
 
@@ -20,58 +21,90 @@ class AnalysisError(Exception):
     pass
 
 
-def analyze_stock(ticker):
+def get_stock_data(ticker: str) -> pd.DataFrame:
     """
-    Analyzes a stock's technical indicators to generate a trading signal.
+    Fetches 5 years of historical stock data.
 
     Args:
         ticker (str): The stock ticker symbol.
 
     Returns:
-        dict: A dictionary containing the analysis results formatted for the
-              Orchestrator.
+        pd.DataFrame: A DataFrame with historical stock data.
 
     Raises:
         TickerNotFound: If the ticker is not found or has no data.
-        AnalysisError: If there's not enough data for analysis.
     """
     stock_ticker = ticker.upper()
-
-    # Fetch 5 years of historical data
     data = yf.download(stock_ticker, period="5y", progress=False)
-
-    # If yfinance returns a MultiIndex, flatten it
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.droplevel(1)
 
     if data.empty:
         raise TickerNotFound(f"No data found for ticker '{stock_ticker}'. "
                              "It might be delisted or incorrect.")
 
-    # Calculate Technical Indicators
+    # If yfinance returns a MultiIndex, flatten it
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.droplevel(1)
+
+    return data
+
+
+def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculates technical indicators (SMA, RSI, MACD) and appends them.
+
+    Args:
+        data (pd.DataFrame): The input DataFrame with stock data.
+
+    Returns:
+        pd.DataFrame: The DataFrame with appended indicator columns.
+    """
     data.ta.sma(length=200, append=True)
     data.ta.rsi(length=14, append=True)
     data.ta.macd(append=True)
+    return data
 
-    # Get the latest data
+
+def check_data_quality(data: pd.DataFrame, ticker: str):
+    """
+    Checks if the latest data has all required indicators for analysis.
+
+    Args:
+        data (pd.DataFrame): The DataFrame with indicators.
+        ticker (str): The stock ticker for error messaging.
+
+    Raises:
+        AnalysisError: If data is missing or NaN for required indicators.
+    """
     latest_data = data.iloc[-1]
-
-    # --- Pre-analysis Check ---
     required_columns = ['Close', 'SMA_200', 'RSI_14',
                         'MACD_12_26_9', 'MACDs_12_26_9']
     for col in required_columns:
         if col not in latest_data or pd.isna(latest_data[col]):
             raise AnalysisError(
                 f"Not enough data to calculate technical indicators for "
-                f"'{stock_ticker}'. Missing or NaN value for {col}."
+                f"'{ticker}'. Missing or NaN value for {col}."
             )
 
-    # --- Analysis Logic ---
 
-    # 1. Trend Analysis
+def generate_signal(latest_data: pd.Series) -> tuple[str, float, str]:
+    """
+    Generates a trading signal based on technical indicators.
+
+    Args:
+        latest_data (pd.Series): The latest row of data with indicators.
+
+    Returns:
+        tuple[str, float, str]: A tuple containing the action
+                                ('buy', 'sell', 'hold'), the confidence
+                                score, and the trend.
+    """
     price = latest_data['Close']
     sma200 = latest_data['SMA_200']
+    rsi = latest_data['RSI_14']
+    macd_line = latest_data['MACD_12_26_9']
+    macd_signal = latest_data['MACDs_12_26_9']
 
+    # 1. Determine Trend
     if price > sma200:
         trend = "Uptrend"
     elif price < sma200:
@@ -79,12 +112,7 @@ def analyze_stock(ticker):
     else:
         trend = "Sideways"
 
-    # 2. Momentum Analysis
-    rsi = latest_data['RSI_14']
-    macd_line = latest_data['MACD_12_26_9']
-    macd_signal = latest_data['MACDs_12_26_9']
-
-    # 3. Signal Generation
+    # 2. Generate Signal based on Trend
     action = "hold"
     confidence = 0.5  # Default confidence
 
@@ -93,35 +121,50 @@ def analyze_stock(ticker):
             action = "buy"
             confidence = 0.85
         elif rsi > 70:
-            action = "hold"
             confidence = 0.6
-        else:
-            action = "hold"
-            confidence = 0.5
-
     elif trend == "Downtrend":
         if rsi > 70 and macd_line < macd_signal:
             action = "sell"
             confidence = 0.85
         else:
-            action = "hold"
             confidence = 0.6
 
-    # --- Output formatted for Orchestrator ---
+    return action, confidence, trend
+
+
+def analyze_stock(ticker: str) -> dict:
+    """
+    Analyzes a stock's technical indicators to generate a trading signal.
+
+    Args:
+        ticker (str): The stock ticker symbol.
+
+    Returns:
+        dict: A dictionary containing the analysis results.
+    """
+    data = get_stock_data(ticker)
+    data_with_indicators = calculate_indicators(data)
+    check_data_quality(data_with_indicators, ticker)
+
+    latest_data = data_with_indicators.iloc[-1]
+    action, confidence, trend = generate_signal(latest_data)
+
+    # Format the final output
     return {
-        "current_price": round(price, 2),
+        "current_price": round(latest_data['Close'], 2),
         "action": action,
         "confidence_score": confidence,
         "indicators": {
             "trend": trend,
-            "rsi": round(rsi, 2),
-            "macd_line": round(macd_line, 2),
-            "macd_signal": round(macd_signal, 2),
+            "rsi": round(latest_data['RSI_14'], 2),
+            "macd_line": round(latest_data['MACD_12_26_9'], 2),
+            "macd_signal": round(latest_data['MACDs_12_26_9'], 2),
         }
     }
 
 
-if __name__ == "__main__":
+def main():
+    """Handles the command-line interface execution."""
     if len(sys.argv) < 2:
         print(json.dumps({
             "error": "Please provide a stock ticker."
@@ -130,7 +173,7 @@ if __name__ == "__main__":
 
     ticker_arg = sys.argv[1]
     try:
-        # For CLI, we need to flatten the structure for CI validation
+        # For CLI, flatten the structure for CI validation
         analysis_result = analyze_stock(ticker_arg)
         cli_output = {
             "trend": analysis_result["indicators"]["trend"],
@@ -141,10 +184,7 @@ if __name__ == "__main__":
             "reasoning": "CLI output does not generate reasoning."
         }
         print(json.dumps(cli_output, indent=4))
-    except TickerNotFound as e:
-        print(json.dumps({"error": str(e)}), file=sys.stderr)
-        sys.exit(1)
-    except AnalysisError as e:
+    except (TickerNotFound, AnalysisError) as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
     except Exception as e:
@@ -152,3 +192,7 @@ if __name__ == "__main__":
             "error": f"An unexpected error occurred: {e}"
         }), file=sys.stderr)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
