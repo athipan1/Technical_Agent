@@ -11,7 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the content of the current directory to the container
-COPY . .
+COPY ./app /app
 
 # Use an environment variable for the port, with a default value
 ENV PORT 8002
@@ -21,4 +21,4 @@ EXPOSE $PORT
 
 # Run main.py when the container launches
 # Use shell form for CMD to allow environment variable substitution
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT
