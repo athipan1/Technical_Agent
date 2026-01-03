@@ -1,24 +1,20 @@
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, Optional
 
-# Import the business logic and custom exceptions from the service module
-from .service import (
-    analyze_stock,
-    TickerNotFound,
-    AnalysisError,
-)
+# Import the business logic from the service module
+from .service import analyze_stock
 
 # --- API Metadata ---
 app = FastAPI(
     title="Technical Analysis Agent",
-    description="An API for performing technical analysis on stock tickers.",
-    version="1.0.0",
+    description="An API for performing technical analysis on stock tickers, conforming to the Orchestrator's canonical schema.",
+    version="1.1.0",
 )
 
 
-# --- Pydantic Models for Data Structuring ---
+# --- Pydantic Models for New Orchestrator Schema ---
 
 class AnalyzeRequest(BaseModel):
     """Defines the structure for the incoming request body."""
@@ -36,18 +32,19 @@ class Indicators(BaseModel):
 
 
 class AnalysisData(BaseModel):
-    """Defines the structure for the core analysis data."""
-    current_price: float
+    """
+    Defines the canonical data structure for the analysis result.
+    This model is used for both success and business logic failures.
+    """
     action: Literal["buy", "sell", "hold"]
-    confidence_score: float
-    indicators: Indicators
+    confidence_score: float = Field(..., ge=0.0, le=1.0)
+    reason: str
+    current_price: Optional[float] = None
+    indicators: Optional[Indicators] = None
 
 
-class SuccessResponse(BaseModel):
-    """Defines the standardized success response schema."""
-    status: Literal["success"]
-    agent_type: Literal["technical"]
-    ticker: str
+class OrchestratorResponse(BaseModel):
+    """The final response schema expected by the Orchestrator."""
     data: AnalysisData
 
 
@@ -55,40 +52,35 @@ class SuccessResponse(BaseModel):
 
 @app.post(
     "/analyze",
-    summary="Analyze a stock ticker",
+    summary="Analyze a stock ticker for the Orchestrator",
     tags=["Analysis"],
-    response_model=SuccessResponse
+    response_model=OrchestratorResponse
 )
-def analyze_ticker_endpoint(request: AnalyzeRequest):
+def analyze_ticker_endpoint(
+    request: AnalyzeRequest,
+    x_correlation_id: Optional[str] = Header(None, alias="X-Correlation-ID")
+):
     """
-    Analyzes a stock ticker and returns technical analysis indicators and a
-    trading signal, conforming to the Orchestrator's expected schema.
+    Analyzes a stock ticker and returns a result conforming to the
+    Orchestrator's canonical schema.
+
+    - **Receives**: A stock `ticker` and an optional `X-Correlation-ID` header.
+    - **Returns**: A structured JSON response with an `action`, `confidence_score`,
+      `reason`, and other relevant data.
+    - **Error Handling**: Business logic errors (e.g., ticker not found) are
+      handled gracefully and returned with an HTTP 200 status code,
+      with the error details encoded in the `reason` field.
     """
-    try:
-        # Call the core business logic from the service module
-        analysis_data = analyze_stock(request.ticker)
+    # The service function now handles internal errors and returns the
+    # appropriate dictionary structure for both success and failure cases.
+    analysis_result = analyze_stock(
+        ticker=request.ticker,
+        correlation_id=x_correlation_id
+    )
 
-        # Construct the standardized success response using Pydantic models
-        response_payload = SuccessResponse(
-            status="success",
-            agent_type="technical",
-            ticker=request.ticker,
-            data=analysis_data
-        )
-        return response_payload
-
-    except TickerNotFound as e:
-        # Handle cases where the ticker is not found with a 404 error
-        raise HTTPException(status_code=404, detail=str(e))
-
-    except AnalysisError as e:
-        # Handle cases where analysis cannot be performed with a 422 error
-        raise HTTPException(status_code=422, detail=str(e))
-
-    except Exception as e:
-        # Handle any other unexpected errors with a 500 internal server error
-        raise HTTPException(status_code=500,
-                            detail=f"An internal error occurred: {e}")
+    # FastAPI will automatically validate the dictionary against the
+    # OrchestratorResponse model and serialize it.
+    return analysis_result
 
 
 @app.get("/", include_in_schema=False)
