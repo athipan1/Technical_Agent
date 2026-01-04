@@ -4,3 +4,4 @@ yfinance
 fastapi
 uvicorn
 pydantic
+gunicorn
