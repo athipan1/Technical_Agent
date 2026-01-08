@@ -30,6 +30,8 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Verify pandas-ta Installation
+      run: python3 -c "import pandas as pd; import pandas_ta; df = pd.DataFrame(); assert hasattr(df, 'ta'), 'pandas-ta extension not loaded'"
     - name: Validate Agent Output
       run: |
         python3 app/service.py AOT.BK | python3 -c "import sys, json; data = json.load(sys.stdin); assert isinstance(data['trend'], str); assert isinstance(data['rsi'], (int, float)); assert isinstance(data['macd_line'], (int, float)); assert isinstance(data['macd_signal'], (int, float)); assert isinstance(data['signal'], str); assert isinstance(data['reasoning'], str);"
