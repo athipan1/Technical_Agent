@@ -5,7 +5,7 @@ import logging
 import warnings
 import pandas as pd
 import yfinance as yf
-import pandas_ta as ta  # noqa: F401
+import pandas_ta as ta
 
 # --- Setup ---
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -45,10 +45,30 @@ def get_stock_data(ticker: str) -> pd.DataFrame:
 
 
 def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
-    """Calculates technical indicators (SMA, RSI, MACD) and appends them."""
-    data.ta.sma(length=200, append=True)
-    data.ta.rsi(length=14, append=True)
-    data.ta.macd(append=True)
+    """
+    Calculates technical indicators (SMA, RSI, MACD) and appends them.
+    Includes fallback mechanisms to prevent crashes.
+    """
+    try:
+        data.ta.sma(length=200, append=True)
+    except Exception as e:
+        logging.warning(f"SMA calculation failed: {e}. Defaulting to 0.")
+        data['SMA_200'] = 0.0
+
+    try:
+        data.ta.rsi(length=14, append=True)
+    except Exception as e:
+        logging.warning(f"RSI calculation failed: {e}. Defaulting to 0.")
+        data['RSI_14'] = 0.0
+
+    try:
+        data.ta.macd(fast=12, slow=26, signal=9, append=True)
+    except Exception as e:
+        logging.warning(f"MACD calculation failed: {e}. Defaulting to 0.")
+        data['MACD_12_26_9'] = 0.0
+        data['MACDh_12_26_9'] = 0.0
+        data['MACDs_12_26_9'] = 0.0
+
     return data
 
 
@@ -116,6 +136,7 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
         rsi_val = round(latest_data['RSI_14'], 2)
 
         return {
+            "status": "success",
             "data": {
                 "action": action,
                 "confidence_score": confidence,
@@ -132,6 +153,7 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
     except TickerNotFound:
         logging.warning(f"Ticker not found for '{ticker}', correlation_id: '{correlation_id}'")
         return {
+            "status": "error",
             "data": {
                 "action": "hold",
                 "confidence_score": 0.0,
@@ -141,6 +163,7 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
     except AnalysisError as e:
         logging.error(f"Analysis error for '{ticker}': {e}, correlation_id: '{correlation_id}'")
         return {
+            "status": "error",
             "data": {
                 "action": "hold",
                 "confidence_score": 0.0,
