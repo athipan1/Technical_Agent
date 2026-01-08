@@ -116,6 +116,7 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
         rsi_val = round(latest_data['RSI_14'], 2)
 
         return {
+            "status": "success",
             "data": {
                 "action": action,
                 "confidence_score": confidence,
@@ -132,6 +133,7 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
     except TickerNotFound:
         logging.warning(f"Ticker not found for '{ticker}', correlation_id: '{correlation_id}'")
         return {
+            "status": "error",
             "data": {
                 "action": "hold",
                 "confidence_score": 0.0,
@@ -141,6 +143,7 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
     except AnalysisError as e:
         logging.error(f"Analysis error for '{ticker}': {e}, correlation_id: '{correlation_id}'")
         return {
+            "status": "error",
             "data": {
                 "action": "hold",
                 "confidence_score": 0.0,

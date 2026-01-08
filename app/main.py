@@ -9,7 +9,8 @@ from .service import analyze_stock
 # --- API Metadata ---
 app = FastAPI(
     title="Technical Analysis Agent",
-    description="An API for performing technical analysis on stock tickers, conforming to the Orchestrator's canonical schema.",
+    description="An API for performing technical analysis on stock tickers, "
+    "conforming to the Orchestrator's canonical schema.",
     version="1.1.0",
 )
 
@@ -45,6 +46,9 @@ class AnalysisData(BaseModel):
 
 class OrchestratorResponse(BaseModel):
     """The final response schema expected by the Orchestrator."""
+    status: Literal["success", "error"]
+    agent: str = "technical_agent"
+    version: str = "1.0.0"
     data: AnalysisData
 
 
@@ -73,14 +77,17 @@ def analyze_ticker_endpoint(
     """
     # The service function now handles internal errors and returns the
     # appropriate dictionary structure for both success and failure cases.
-    analysis_result = analyze_stock(
+    service_result = analyze_stock(
         ticker=request.ticker,
         correlation_id=x_correlation_id
     )
 
-    # FastAPI will automatically validate the dictionary against the
-    # OrchestratorResponse model and serialize it.
-    return analysis_result
+    # Instantiate the Pydantic model directly. The 'agent' and 'version'
+    # fields will be populated with their default values from the model.
+    return OrchestratorResponse(
+        status=service_result["status"],
+        data=service_result["data"]
+    )
 
 
 @app.get("/", include_in_schema=False)
