@@ -5,7 +5,7 @@ import logging
 import warnings
 import pandas as pd
 import yfinance as yf
-import pandas_ta as ta  # noqa: F401
+import pandas_ta as ta
 
 # --- Setup ---
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -46,9 +46,15 @@ def get_stock_data(ticker: str) -> pd.DataFrame:
 
 def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
     """Calculates technical indicators (SMA, RSI, MACD) and appends them."""
-    data.ta.sma(length=200, append=True)
-    data.ta.rsi(length=14, append=True)
-    data.ta.macd(append=True)
+    # Calculate indicators directly using the close price
+    close_price = data['Close']
+    sma200 = ta.sma(close_price, length=200)
+    rsi14 = ta.rsi(close_price, length=14)
+    macd = ta.macd(close_price)
+
+    # Join the calculated indicators back to the original DataFrame
+    # The default column names from pandas_ta match the required names.
+    data = data.join([sma200, rsi14, macd])
     return data
 
 
