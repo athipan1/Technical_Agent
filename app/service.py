@@ -50,7 +50,7 @@ def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
     close_price = data['Close']
     sma200 = ta.sma(close_price, period=200)
     rsi14 = ta.rsi(close_price, period=14)
-    macd = ta.macd(close_price)
+    macd = ta.macd(close_price, short_period=12, long_period=26, signal_period=9)
 
     # Join the calculated indicators back to the original DataFrame
     # The default column names from pandas_ta match the required names.
