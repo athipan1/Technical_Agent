@@ -45,16 +45,30 @@ def get_stock_data(ticker: str) -> pd.DataFrame:
 
 
 def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
-    """Calculates technical indicators (SMA, RSI, MACD) and appends them."""
-    # Calculate indicators directly using the close price
-    close_price = data['Close']
-    sma200 = ta.sma(close_price, period=200)
-    rsi14 = ta.rsi(close_price, period=14)
-    macd = ta.macd(close_price, short_period=12, long_period=26, signal_period=9)
+    """
+    Calculates technical indicators (SMA, RSI, MACD) and appends them.
+    Includes fallback mechanisms to prevent crashes.
+    """
+    try:
+        data.ta.sma(length=200, append=True)
+    except Exception as e:
+        logging.warning(f"SMA calculation failed: {e}. Defaulting to 0.")
+        data['SMA_200'] = 0.0
 
-    # Join the calculated indicators back to the original DataFrame
-    # The default column names from pandas_ta match the required names.
-    data = data.join([sma200, rsi14, macd])
+    try:
+        data.ta.rsi(length=14, append=True)
+    except Exception as e:
+        logging.warning(f"RSI calculation failed: {e}. Defaulting to 0.")
+        data['RSI_14'] = 0.0
+
+    try:
+        data.ta.macd(fast=12, slow=26, signal=9, append=True)
+    except Exception as e:
+        logging.warning(f"MACD calculation failed: {e}. Defaulting to 0.")
+        data['MACD_12_26_9'] = 0.0
+        data['MACDh_12_26_9'] = 0.0
+        data['MACDs_12_26_9'] = 0.0
+
     return data
 
 
