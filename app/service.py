@@ -48,9 +48,9 @@ def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
     """Calculates technical indicators (SMA, RSI, MACD) and appends them."""
     # Calculate indicators directly using the close price
     close_price = data['Close']
-    sma200 = ta.sma(close_price, length=200)
-    rsi14 = ta.rsi(close_price, length=14)
-    macd = ta.macd(close_price)
+    sma200 = ta.sma(close_price, length=200, talib=False)
+    rsi14 = ta.rsi(close_price, length=14, talib=False)
+    macd = ta.macd(close_price, talib=False)
 
     # Join the calculated indicators back to the original DataFrame
     # The default column names from pandas_ta match the required names.
