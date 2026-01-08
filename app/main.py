@@ -48,7 +48,7 @@ class OrchestratorResponse(BaseModel):
     """The final response schema expected by the Orchestrator."""
     status: Literal["success", "error"]
     agent_type: str = "technical"
-    version: str = "1.0.0"
+    version: str = "1.1.0"
     data: AnalysisData
 
 
