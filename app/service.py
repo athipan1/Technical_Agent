@@ -133,7 +133,7 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
 
         latest_data = data_with_indicators.iloc[-1]
         action, confidence, trend = generate_signal(latest_data)
-        rsi_val = round(latest_data['RSI_14'], 2)
+        rsi_val = round(latest_data["RSI_14"], 2)
 
         return {
             "status": "success",
@@ -141,14 +141,15 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
                 "action": action,
                 "confidence_score": confidence,
                 "reason": f"Signal '{action}' generated. Trend: {trend}, RSI: {rsi_val}.",
-                "current_price": round(latest_data['Close'], 2),
+                "current_price": round(latest_data["Close"], 2),
                 "indicators": {
                     "trend": trend,
                     "rsi": rsi_val,
-                    "macd_line": round(latest_data['MACD_12_26_9'], 2),
-                    "macd_signal": round(latest_data['MACDs_12_26_9'], 2),
+                    "macd_line": round(latest_data["MACD_12_26_9"], 2),
+                    "macd_signal": round(latest_data["MACDs_12_26_9"], 2),
                 }
-            }
+            },
+            "error": None
         }
     except TickerNotFound:
         logging.warning(f"Ticker not found for '{ticker}', correlation_id: '{correlation_id}'")
@@ -158,6 +159,11 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
                 "action": "hold",
                 "confidence_score": 0.0,
                 "reason": "ticker_not_found"
+            },
+            "error": {
+                "code": "TICKER_NOT_FOUND",
+                "message": f"No data found for ticker '{ticker}'",
+                "retryable": False
             }
         }
     except AnalysisError as e:
@@ -168,6 +174,11 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
                 "action": "hold",
                 "confidence_score": 0.0,
                 "reason": "analysis_error"
+            },
+            "error": {
+                "code": "ANALYSIS_ERROR",
+                "message": str(e),
+                "retryable": False
             }
         }
 

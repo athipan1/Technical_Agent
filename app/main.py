@@ -50,6 +50,7 @@ class OrchestratorResponse(BaseModel):
     agent_type: str = "technical"
     version: str = "1.1.0"
     data: AnalysisData
+    error: Optional[dict] = None
 
 
 # --- API Endpoints ---
@@ -82,11 +83,14 @@ def analyze_ticker_endpoint(
         correlation_id=x_correlation_id
     )
 
-    # Instantiate the Pydantic model directly. The 'agent' and 'version'
-    # fields will be populated with their default values from the model.
+    # Instantiate the Pydantic model directly.
+    # Populating agent_type and version from the model defaults.
     return OrchestratorResponse(
         status=service_result["status"],
-        data=service_result["data"]
+        agent_type="technical",
+        version="1.1.0",
+        data=service_result["data"],
+        error=service_result.get("error")
     )
 
 
