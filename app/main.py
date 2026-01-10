@@ -1,4 +1,5 @@
 
+from datetime import datetime
 from fastapi import FastAPI, Header
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
@@ -49,6 +50,7 @@ class OrchestratorResponse(BaseModel):
     status: Literal["success", "error"]
     agent_type: str = "technical"
     version: str = "1.1.0"
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     data: AnalysisData
     error: Optional[dict] = None
 
@@ -92,6 +94,12 @@ def analyze_ticker_endpoint(
         data=service_result["data"],
         error=service_result.get("error")
     )
+
+
+@app.get("/health", summary="Health Check", tags=["Health"])
+def health_check():
+    """Returns a 200 OK status if the service is healthy."""
+    return {"status": "ok"}
 
 
 @app.get("/", include_in_schema=False)

@@ -48,7 +48,7 @@ COPY --from=builder /app/requirements.txt .
 RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt
 
 # Copy the application source code
-COPY ./app /app
+COPY ./app /app/app
 
 # Change the ownership of the application directory to the non-root user
 RUN chown -R appuser:appgroup /app
