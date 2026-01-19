@@ -48,7 +48,7 @@ COPY --from=builder /app/requirements.txt .
 RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt
 
 # Copy the application source code
-COPY ./app /app/app
+COPY ./app /app
 
 # Change the ownership of the application directory to the non-root user
 RUN chown -R appuser:appgroup /app
@@ -64,4 +64,4 @@ EXPOSE $PORT
 
 # Command to run the application using Gunicorn with Uvicorn workers
 # Using sh -c allows for environment variable substitution while using the recommended exec form.
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT --workers 2 --worker-class uvicorn.workers.UvicornWorker app.main:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT --workers 2 --worker-class uvicorn.workers.UvicornWorker main:app"]
