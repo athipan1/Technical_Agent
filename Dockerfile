@@ -42,4 +42,4 @@ ENV PORT=8002
 EXPOSE $PORT
 
 # Run Gunicorn with Uvicorn workers
-CMD ["gunicorn", "--bind", "0.0.0.0:8002", "--workers", "2", "--worker-class", "uvicorn.workers.UvicornWorker", "app.main:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8002", "--workers", "2", "--worker-class", "uvicorn.workers.UvicornWorker", "main:app"]

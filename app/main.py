@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 # Import the business logic from the service module
-from .service import analyze_stock
+from service import analyze_stock
 
 # --- API Metadata ---
 app = FastAPI(
