@@ -1,11 +1,15 @@
-
-from datetime import datetime
 from fastapi import FastAPI, Header
-from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Optional
 
 # Import the business logic from the service module
 from service import analyze_stock
+# Import models from the newly created models module
+from models import (
+    AnalyzeRequest,
+    AnalysisData,
+    StandardResponse,
+    Action
+)
 
 # --- API Metadata ---
 app = FastAPI(
@@ -16,52 +20,13 @@ app = FastAPI(
 )
 
 
-# --- Pydantic Models for New Orchestrator Schema ---
-
-class AnalyzeRequest(BaseModel):
-    """Defines the structure for the incoming request body."""
-    ticker: str = Field(...,
-                        description="The stock ticker symbol to be analyzed.",
-                        example="AOT.BK")
-
-
-class Indicators(BaseModel):
-    """Defines the structure for the technical indicators data."""
-    trend: str
-    rsi: float
-    macd_line: float
-    macd_signal: float
-
-
-class AnalysisData(BaseModel):
-    """
-    Defines the canonical data structure for the analysis result.
-    This model is used for both success and business logic failures.
-    """
-    action: Literal["buy", "sell", "hold"]
-    confidence_score: float = Field(..., ge=0.0, le=1.0)
-    reason: str
-    current_price: Optional[float] = None
-    indicators: Optional[Indicators] = None
-
-
-class OrchestratorResponse(BaseModel):
-    """The final response schema expected by the Orchestrator."""
-    status: Literal["success", "error"]
-    agent_type: str = "technical"
-    version: str = "1.1.0"
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-    data: AnalysisData
-    error: Optional[dict] = None
-
-
 # --- API Endpoints ---
 
 @app.post(
     "/analyze",
     summary="Analyze a stock ticker for the Orchestrator",
     tags=["Analysis"],
-    response_model=OrchestratorResponse
+    response_model=StandardResponse[AnalysisData]
 )
 def analyze_ticker_endpoint(
     request: AnalyzeRequest,
@@ -72,7 +37,7 @@ def analyze_ticker_endpoint(
     Orchestrator's canonical schema.
 
     - **Receives**: A stock `ticker` and an optional `X-Correlation-ID` header.
-    - **Returns**: A structured JSON response with an `action`, `confidence_score`,
+    - **Returns**: A structured JSON response with an `action`, `confidence`,
       `reason`, and other relevant data.
     - **Error Handling**: Business logic errors (e.g., ticker not found) are
       handled gracefully and returned with an HTTP 200 status code,
@@ -85,13 +50,23 @@ def analyze_ticker_endpoint(
         correlation_id=x_correlation_id
     )
 
-    # Instantiate the Pydantic model directly.
-    # Populating agent_type and version from the model defaults.
-    return OrchestratorResponse(
+    # Map the service result data to the new AnalysisData model
+    # Note: confidence_score has been renamed to confidence, and action is ensured to be lowercase
+    raw_data = service_result["data"]
+    analysis_data = AnalysisData(
+        action=Action(raw_data["action"].lower()),
+        confidence=raw_data["confidence"],
+        reason=raw_data["reason"],
+        current_price=raw_data.get("current_price"),
+        indicators=raw_data.get("indicators")
+    )
+
+    # Instantiate the StandardResponse model.
+    return StandardResponse(
         status=service_result["status"],
         agent_type="technical",
         version="1.1.0",
-        data=service_result["data"],
+        data=analysis_data,
         error=service_result.get("error")
     )
 

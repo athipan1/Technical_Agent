@@ -139,7 +139,7 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
             "status": "success",
             "data": {
                 "action": action,
-                "confidence_score": confidence,
+                "confidence": confidence,
                 "reason": f"Signal '{action}' generated. Trend: {trend}, RSI: {rsi_val}.",
                 "current_price": round(latest_data["Close"], 2),
                 "indicators": {
@@ -157,7 +157,7 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
             "status": "error",
             "data": {
                 "action": "hold",
-                "confidence_score": 0.0,
+                "confidence": 0.0,
                 "reason": "ticker_not_found"
             },
             "error": {
@@ -172,7 +172,7 @@ def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
             "status": "error",
             "data": {
                 "action": "hold",
-                "confidence_score": 0.0,
+                "confidence": 0.0,
                 "reason": "analysis_error"
             },
             "error": {
