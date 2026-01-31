@@ -2,7 +2,7 @@ from fastapi import FastAPI, Header
 from typing import Optional
 
 # Import the business logic from the service module
-from service import analyze_stock
+from app.service import analyze_stock
 # Import models from the newly created models module
 from models import (
     AnalyzeRequest,
