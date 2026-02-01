@@ -26,7 +26,7 @@ class AnalysisData(BaseModel):
     This model is used for both success and business logic failures.
     """
     action: Action
-    confidence: float = Field(..., ge=0.0, le=1.0)
+    confidence_score: float = Field(..., ge=0.0, le=1.0)
     reason: str
     current_price: Optional[float] = None
     indicators: Optional[Indicators] = None

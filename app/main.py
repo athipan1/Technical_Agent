@@ -51,11 +51,11 @@ def analyze_ticker_endpoint(
     )
 
     # Map the service result data to the new AnalysisData model
-    # Note: confidence_score has been renamed to confidence, and action is ensured to be lowercase
+    # Note: confidence_score is used, and action is ensured to be lowercase
     raw_data = service_result["data"]
     analysis_data = AnalysisData(
         action=Action(raw_data["action"].lower()),
-        confidence=raw_data["confidence"],
+        confidence_score=raw_data["confidence_score"],
         reason=raw_data["reason"],
         current_price=raw_data.get("current_price"),
         indicators=raw_data.get("indicators")
@@ -71,10 +71,15 @@ def analyze_ticker_endpoint(
     )
 
 
-@app.get("/health", summary="Health Check", tags=["Health"])
+@app.get("/health", summary="Health Check", tags=["Health"], response_model=StandardResponse[dict])
 def health_check():
     """Returns a 200 OK status if the service is healthy."""
-    return {"status": "ok"}
+    return StandardResponse(
+        status="success",
+        agent_type="technical",
+        version="1.1.0",
+        data={"status": "ok"}
+    )
 
 
 @app.get("/", include_in_schema=False)
