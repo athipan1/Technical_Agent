@@ -2,12 +2,12 @@ from fastapi import FastAPI, Header
 from typing import Optional
 
 # Import the business logic from the service module
-from app.service import analyze_stock
+from service import analyze_stock
 # Import models from the newly created models module
 from models import (
     AnalyzeRequest,
-    AnalysisData,
-    StandardResponse,
+    StandardAgentData,
+    StandardAgentResponse,
     Action
 )
 
@@ -26,7 +26,7 @@ app = FastAPI(
     "/analyze",
     summary="Analyze a stock ticker for the Orchestrator",
     tags=["Analysis"],
-    response_model=StandardResponse[AnalysisData]
+    response_model=StandardAgentResponse[StandardAgentData]
 )
 def analyze_ticker_endpoint(
     request: AnalyzeRequest,
@@ -50,10 +50,10 @@ def analyze_ticker_endpoint(
         correlation_id=x_correlation_id
     )
 
-    # Map the service result data to the new AnalysisData model
+    # Map the service result data to the new StandardAgentData model
     # Note: confidence_score is used, and action is ensured to be lowercase
     raw_data = service_result["data"]
-    analysis_data = AnalysisData(
+    analysis_data = StandardAgentData(
         action=Action(raw_data["action"].lower()),
         confidence_score=raw_data["confidence_score"],
         reason=raw_data["reason"],
@@ -61,8 +61,8 @@ def analyze_ticker_endpoint(
         indicators=raw_data.get("indicators")
     )
 
-    # Instantiate the StandardResponse model.
-    return StandardResponse(
+    # Instantiate the StandardAgentResponse model.
+    return StandardAgentResponse(
         status=service_result["status"],
         agent_type="technical",
         version="1.1.0",
@@ -71,10 +71,10 @@ def analyze_ticker_endpoint(
     )
 
 
-@app.get("/health", summary="Health Check", tags=["Health"], response_model=StandardResponse[dict])
+@app.get("/health", summary="Health Check", tags=["Health"], response_model=StandardAgentResponse[dict])
 def health_check():
     """Returns a 200 OK status if the service is healthy."""
-    return StandardResponse(
+    return StandardAgentResponse(
         status="success",
         agent_type="technical",
         version="1.1.0",
