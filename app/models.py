@@ -20,7 +20,7 @@ class Indicators(BaseModel):
     macd_signal: float
 
 
-class AnalysisData(BaseModel):
+class StandardAgentData(BaseModel):
     """
     Defines the canonical data structure for the analysis result.
     This model is used for both success and business logic failures.
@@ -32,13 +32,13 @@ class AnalysisData(BaseModel):
     indicators: Optional[Indicators] = None
 
 
-class StandardResponse(BaseModel, Generic[T]):
+class StandardAgentResponse(BaseModel, Generic[T]):
     """The final response schema expected by the Orchestrator."""
     status: Literal["success", "error"]
     agent_type: str = "technical"
     version: str = "1.1.0"
-    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
-    data: T
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    data: Optional[T] = None
     error: Optional[dict] = None
 
 
