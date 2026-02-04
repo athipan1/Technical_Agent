@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir --upgrade pip
 # Copy requirements and build wheels
 COPY requirements.txt .
 # Pre-install numpy to ensure it's available for other builds in requirements.txt
-RUN pip install --no-cache-dir "numpy==1.22.4"
+RUN pip install --no-cache-dir "numpy==1.26.4"
 RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 # Stage 2: Runtime
