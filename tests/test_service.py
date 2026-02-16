@@ -6,7 +6,8 @@ import os
 # Add the app directory to sys.path to import service
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../app')))
 
-from service import calculate_indicators, generate_signal
+from service import calculate_indicators, generate_signal, analyze_stock
+from unittest.mock import patch, MagicMock
 
 def test_calculate_indicators():
     # Create mock data (need enough points for indicators)
@@ -65,3 +66,18 @@ def test_generate_signal_hold():
     assert action == 'hold'
     assert trend == 'Uptrend'
     assert confidence == 0.5
+
+@patch('service.get_stock_data')
+def test_analyze_stock_success(mock_get_data):
+    # Setup mock data
+    df = pd.DataFrame({
+        'Close': [float(100 + i) for i in range(250)]
+    })
+    mock_get_data.return_value = df
+
+    result = analyze_stock("AAPL")
+
+    assert result['status'] == 'success'
+    assert 'confidence_score' in result['data']
+    assert result['data']['confidence_score'] == 0.5 # Default for hold
+    assert 'indicators' in result['data']

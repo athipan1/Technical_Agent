@@ -190,6 +190,22 @@ def main():
         sys.exit(1)
 
     ticker_arg = sys.argv[1]
+    is_mock = "--mock" in sys.argv
+
+    if is_mock:
+        # Return mock data for CI validation to avoid yfinance rate limits
+        cli_output = {
+            "trend": "Uptrend",
+            "rsi": 30.0,
+            "macd_line": 0.5,
+            "macd_signal": 0.2,
+            "signal": "hold",
+            "confidence_score": 0.5,
+            "reasoning": "Mock data for CI validation."
+        }
+        print(json.dumps(cli_output, indent=4))
+        return
+
     try:
         # We don't have a correlation_id in the CLI context
         analysis_result = analyze_stock(ticker_arg)
@@ -207,6 +223,7 @@ def main():
             "macd_line": data["indicators"]["macd_line"],
             "macd_signal": data["indicators"]["macd_signal"],
             "signal": data["action"].lower(),
+            "confidence_score": data["confidence_score"],
             "reasoning": data["reason"]
         }
         print(json.dumps(cli_output, indent=4))
