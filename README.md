@@ -2,12 +2,18 @@
 
 โปรเจกต์นี้เป็น Microservice สำหรับวิเคราะห์ทางเทคนิคของหุ้น (Technical Analysis) โดยใช้ข้อมูลราคาในอดีตเพื่อสร้างสัญญาณซื้อ (Buy), ขาย (Sell) หรือถือ (Hold) ตามตัวชี้วัดทางเทคนิค (Technical Indicators) เพื่อส่งข้อมูลให้กับระบบ Orchestrator ต่อไป
 
+## การพัฒนาล่าสุด (Recent Improvements)
+1.  **Optimized Data Fetching**: ปรับลดระยะเวลาการดึงข้อมูลย้อนหลังเหลือ 2 ปี (จากเดิม 5 ปี) เพื่อเพิ่มความรวดเร็วในการประมวลผล โดยยังคงความแม่นยำสำหรับตัวชี้วัด SMA 200 วัน
+2.  **Dependency Stability**: ปรับปรุง `requirements.txt` โดยระบุเวอร์ชันของ Library ที่เสถียรและผ่านการทดสอบแล้ว เพื่อความง่ายในการติดตั้งและลดข้อผิดพลาดจาก Dependency Conflict
+3.  **Schema Alignment**: ปรับปรุงโครงสร้างข้อมูล (Schema) ในส่วนของผลลัพธ์ให้ตรงตามมาตรฐานที่ Orchestrator กำหนด (ใช้ `confidence_score` แทน `confidence`)
+4.  **Unit Tests**: เพิ่มชุดทดสอบอัตโนมัติ (Automated Tests) ครอบคลุมตรรกะทางธุรกิจที่สำคัญ เพื่อความยั่งยืนในการพัฒนาต่อยอด
+
 ## การทำงานของโปรเจกต์
 1. รับคำขอผ่าน REST API พร้อมระบุชื่อย่อหุ้น (Ticker)
-2. ดึงข้อมูลราคาย้อนหลัง 5 ปีจาก Yahoo Finance โดยใช้ `yfinance`
+2. ดึงข้อมูลราคาย้อนหลัง 2 ปีจาก Yahoo Finance โดยใช้ `yfinance`
 3. คำนวณตัวชี้วัดทางเทคนิค (SMA, RSI, MACD) โดยใช้ `pandas-ta`
 4. วิเคราะห์ข้อมูลและสร้างสัญญาณการซื้อขายตามอัลกอริทึมที่กำหนด
-5. ส่งผลลัพธ์กลับในรูปแบบ JSON ตามมาตรฐาน `StandardResponse` ที่กำหนดไว้
+5. ส่งผลลัพธ์กลับในรูปแบบ JSON ตามมาตรฐาน `StandardResponse`
 
 ## อัลกอริทึมการตัดสินใจ (Trading Strategy)
 การสร้างสัญญาณจะพิจารณาจากแนวโน้ม (Trend) และตัวชี้วัดประกอบกัน ดังนี้:
@@ -39,16 +45,22 @@
 ## ข้อมูลสำหรับนักพัฒนา (Developer Guide)
 
 ### โครงสร้างไฟล์ในระบบ
-- `app/main.py`: จุดเริ่มต้นของแอปพลิเคชัน FastAPI กำหนด Endpoints และการจัดการ Request/Response
-- `app/models.py`: คำจำกัดความของ Pydantic models (Schema) เพื่อควบคุมโครงสร้างข้อมูล
-- `app/service.py`: ตรรกะทางธุรกิจ (Business Logic) การคำนวณตัวชี้วัด และอัลกอริทึมการวิเคราะห์
-- `Dockerfile`: ไฟล์สำหรับสร้าง Docker Image สำหรับการ Deploy ในรูปแบบ Container
+- `app/main.py`: จุดเริ่มต้นของแอปพลิเคชัน FastAPI
+- `app/models.py`: คำจำกัดความของ Pydantic models
+- `app/service.py`: ตรรกะการคำนวณและอัลกอริทึม
+- `tests/`: ชุดทดสอบ Unit Test
+- `Dockerfile`: สำหรับการ Deploy ด้วย Container
+
+### การรันชุดทดสอบ (Running Tests)
+```bash
+pytest
+```
 
 ### เทคโนโลยีที่ใช้
-- **FastAPI**: Web Framework ประสิทธิภาพสูงสำหรับสร้าง API
-- **yfinance**: ไลบรารีสำหรับดึงข้อมูลการเงินจาก Yahoo Finance
-- **pandas-ta**: ส่วนขยายของ Pandas สำหรับการคำนวณทางเทคนิค (Technical Analysis Indicators)
-- **Pydantic**: สำหรับการตรวจสอบความถูกต้องของข้อมูล (Data Validation)
+- **FastAPI**: Web Framework
+- **yfinance**: ดึงข้อมูลหุ้น
+- **pandas-ta**: คำนวณ Technical Indicators
+- **Pytest**: ทดสอบระบบ
 
 ---
 
@@ -64,7 +76,7 @@
 }
 ```
 
-#### Response Body (`StandardResponse`) - กรณีสำเร็จ
+#### Response Body (`StandardResponse`)
 ```json
 {
   "status": "success",
@@ -73,7 +85,7 @@
   "timestamp": "2023-10-27T10:00:00.000000",
   "data": {
     "action": "hold",
-    "confidence": 0.5,
+    "confidence_score": 0.5,
     "reason": "Signal 'hold' generated. Trend: Uptrend, RSI: 45.23.",
     "current_price": 70.25,
     "indicators": {
@@ -87,30 +99,8 @@
 }
 ```
 
-#### Response Body (`StandardResponse`) - กรณีเกิดข้อผิดพลาดทางธุรกิจ
-```json
-{
-  "status": "error",
-  "agent_type": "technical",
-  "version": "1.1.0",
-  "timestamp": "2023-10-27T10:05:00.000000",
-  "data": {
-    "action": "hold",
-    "confidence": 0.0,
-    "reason": "ticker_not_found"
-  },
-  "error": {
-    "code": "TICKER_NOT_FOUND",
-    "message": "No data found for ticker 'INVALID'",
-    "retryable": false
-  }
-}
-```
-
 ### 2. ตรวจสอบความพร้อมของระบบ (Health Check)
 **Endpoint:** `GET /health`
-- **Response:** `{"status": "ok"}`
 
 ### 3. หน้าเริ่มต้น (Root)
 **Endpoint:** `GET /`
-- **Response:** `{"message": "Technical Analysis Agent is running."}`
