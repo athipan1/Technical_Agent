@@ -1,7 +1,9 @@
-pandas
-git+https://github.com/Pandas-Quant-Finance/pandas-ta.git
-yfinance
-fastapi
-uvicorn
-pydantic
-gunicorn
+numpy>=1.26.0
+pandas>=2.3.2
+pandas-ta==0.4.71b0
+yfinance==0.2.52
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
+gunicorn==23.0.0
+pytest==8.3.4

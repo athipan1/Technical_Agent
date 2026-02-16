@@ -27,13 +27,13 @@ class AnalysisError(Exception):
 # --- Core Functions ---
 def get_stock_data(ticker: str) -> pd.DataFrame:
     """
-    Fetches 5 years of historical stock data.
+    Fetches 2 years of historical stock data.
 
     Raises:
         TickerNotFound: If the ticker is not found or has no data.
     """
     stock_ticker = ticker.upper()
-    data = yf.download(stock_ticker, period="5y", progress=False)
+    data = yf.download(stock_ticker, period="2y", progress=False)
 
     if data.empty:
         raise TickerNotFound(f"No data found for ticker '{stock_ticker}'.")
