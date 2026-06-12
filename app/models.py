@@ -36,7 +36,7 @@ class StandardAgentResponse(BaseModel, Generic[T]):
     """The final response schema expected by the Orchestrator."""
     status: Literal["success", "error"]
     agent_type: str = "technical"
-    version: str = "1.1.0"
+    version: str = "1.0.0"
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     data: Optional[T] = None
     error: Optional[dict] = None
