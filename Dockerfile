@@ -20,8 +20,8 @@ ENV PORT=8002
 ENV NUMBA_DISABLE_JIT=1
 WORKDIR /app
 
-# Install git
-RUN apt-get update && apt-get install -y git --no-install-recommends && rm -rf /var/lib/apt/lists/*
+# Install git and curl for Docker healthcheck
+RUN apt-get update && apt-get install -y git curl --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN groupadd -r appgroup && useradd --no-log-init -r -g appgroup appuser
