@@ -18,6 +18,16 @@ class Indicators(BaseModel):
     rsi: float
     macd_line: float
     macd_signal: float
+    atr: Optional[float] = None
+    atr_percent: Optional[float] = None
+    atr_stop_long: Optional[float] = None
+    atr_stop_short: Optional[float] = None
+    swing_low: Optional[float] = None
+    swing_high: Optional[float] = None
+    stop_loss: Optional[float] = None
+    stop_method: Optional[str] = None
+    volatility_regime: Optional[str] = None
+    timeframe: Optional[str] = None
 
 
 class StandardAgentData(BaseModel):
@@ -44,6 +54,5 @@ class StandardAgentResponse(BaseModel, Generic[T]):
 
 class AnalyzeRequest(BaseModel):
     """Defines the structure for the incoming request body."""
-    ticker: str = Field(...,
-                        description="The stock ticker symbol to be analyzed.",
-                        example="AOT.BK")
+    ticker: str = Field(..., description="The stock ticker symbol to be analyzed.", example="AOT.BK")
+    timeframe: str = Field("1d", description="Candle timeframe such as 1d, 1h, 30m, or 15m.", example="1d")
