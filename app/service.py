@@ -9,6 +9,8 @@ import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
 
+from risk_controls import calculate_atr, calculate_stop_levels
+
 # --- Setup ---
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="yfinance")
@@ -24,6 +26,19 @@ class TickerNotFound(Exception):
 class AnalysisError(Exception):
     """Custom exception for errors during the analysis process."""
     pass
+
+
+TIMEFRAME_CONFIG = {
+    "1d": {"periods": ["2y", "1y", "6mo"], "interval": "1d", "chart_days": 730},
+    "1h": {"periods": ["730d", "365d", "90d"], "interval": "1h", "chart_days": 730},
+    "30m": {"periods": ["60d", "30d"], "interval": "30m", "chart_days": 60},
+    "15m": {"periods": ["60d", "30d"], "interval": "15m", "chart_days": 60},
+}
+
+
+def _normalise_timeframe(timeframe: str | None) -> str:
+    value = str(timeframe or "1d").strip().lower()
+    return value if value in TIMEFRAME_CONFIG else "1d"
 
 
 # --- Core Functions ---
@@ -53,11 +68,11 @@ def _normalize_ohlcv_columns(data: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
-def _fetch_with_yfinance(ticker: str) -> pd.DataFrame:
+def _fetch_with_yfinance(ticker: str, timeframe: str = "1d") -> pd.DataFrame:
+    config = TIMEFRAME_CONFIG[_normalise_timeframe(timeframe)]
     attempts = [
-        {"period": "2y", "interval": "1d", "auto_adjust": False},
-        {"period": "1y", "interval": "1d", "auto_adjust": False},
-        {"period": "6mo", "interval": "1d", "auto_adjust": False},
+        {"period": period, "interval": config["interval"], "auto_adjust": False}
+        for period in config["periods"]
     ]
     for kwargs in attempts:
         try:
@@ -70,14 +85,17 @@ def _fetch_with_yfinance(ticker: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def _fetch_with_yahoo_chart(ticker: str) -> pd.DataFrame:
-    """Fetch daily candles directly from Yahoo Chart API as a fallback."""
+def _fetch_with_yahoo_chart(ticker: str, timeframe: str = "1d") -> pd.DataFrame:
+    """Fetch candles directly from Yahoo Chart API as a fallback."""
+    timeframe = _normalise_timeframe(timeframe)
+    config = TIMEFRAME_CONFIG[timeframe]
     period2 = int(time.time())
-    period1 = period2 - (730 * 24 * 60 * 60)
+    period1 = period2 - (int(config["chart_days"]) * 24 * 60 * 60)
     symbol = urllib.parse.quote(ticker.upper())
+    interval = config["interval"]
     url = (
         f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-        f"?period1={period1}&period2={period2}&interval=1d&events=history&includeAdjustedClose=true"
+        f"?period1={period1}&period2={period2}&interval={interval}&events=history&includeAdjustedClose=true"
     )
     req = urllib.request.Request(
         url,
@@ -122,7 +140,7 @@ def _fetch_with_yahoo_chart(ticker: str) -> pd.DataFrame:
     return data
 
 
-def get_stock_data(ticker: str) -> pd.DataFrame:
+def get_stock_data(ticker: str, timeframe: str = "1d") -> pd.DataFrame:
     """
     Fetches historical stock data using yfinance first and Yahoo Chart API as fallback.
 
@@ -130,11 +148,12 @@ def get_stock_data(ticker: str) -> pd.DataFrame:
         TickerNotFound: If the ticker is not found or has no data.
     """
     stock_ticker = ticker.upper().strip()
+    timeframe = _normalise_timeframe(timeframe)
 
-    data = _fetch_with_yfinance(stock_ticker)
+    data = _fetch_with_yfinance(stock_ticker, timeframe)
     if data.empty:
         logging.info(f"yfinance returned no data for {stock_ticker}; trying Yahoo Chart API fallback.")
-        data = _fetch_with_yahoo_chart(stock_ticker)
+        data = _fetch_with_yahoo_chart(stock_ticker, timeframe)
 
     data = _normalize_ohlcv_columns(data)
     if data.empty or "Close" not in data.columns:
@@ -149,7 +168,7 @@ def get_stock_data(ticker: str) -> pd.DataFrame:
 
 def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
     """
-    Calculates technical indicators (SMA, RSI, MACD) and appends them.
+    Calculates technical indicators and appends them.
     Includes fallback mechanisms to prevent crashes.
     """
     try:
@@ -172,6 +191,13 @@ def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
         data['MACDh_12_26_9'] = 0.0
         data['MACDs_12_26_9'] = 0.0
 
+    try:
+        atr = ta.atr(high=data['High'], low=data['Low'], close=data['Close'], length=14)
+        data['ATR_14'] = atr
+    except Exception as e:
+        logging.warning(f"ATR calculation failed: {e}. Defaulting to manual ATR.")
+        data['ATR_14'] = calculate_atr(data, length=14)
+
     return data
 
 
@@ -183,7 +209,7 @@ def check_data_quality(data: pd.DataFrame, ticker: str):
         AnalysisError: If data is missing or NaN for required indicators.
     """
     latest_data = data.iloc[-1]
-    required_columns = ['Close', 'SMA_200', 'RSI_14', 'MACD_12_26_9', 'MACDs_12_26_9']
+    required_columns = ['Close', 'High', 'Low', 'SMA_200', 'RSI_14', 'MACD_12_26_9', 'MACDs_12_26_9', 'ATR_14']
     for col in required_columns:
         if col not in latest_data or pd.isna(latest_data[col]):
             raise AnalysisError(f"Not enough data for '{ticker}'. Missing or NaN value for {col}.")
@@ -223,33 +249,45 @@ def generate_signal(latest_data: pd.Series) -> tuple[str, float, str]:
     return action, confidence, trend
 
 
-def analyze_stock(ticker: str, correlation_id: str = None) -> dict:
+def analyze_stock(ticker: str, timeframe: str = "1d", correlation_id: str = None) -> dict:
     """
     Analyzes a stock and returns a structured response for the orchestrator.
     Handles errors gracefully by returning a specific JSON structure.
     """
-    logging.info(f"Analysis started for ticker: '{ticker}', correlation_id: '{correlation_id}'")
+    timeframe = _normalise_timeframe(timeframe)
+    logging.info(f"Analysis started for ticker: '{ticker}', timeframe: '{timeframe}', correlation_id: '{correlation_id}'")
     try:
-        data = get_stock_data(ticker)
+        data = get_stock_data(ticker, timeframe)
         data_with_indicators = calculate_indicators(data)
         check_data_quality(data_with_indicators, ticker)
 
         latest_data = data_with_indicators.iloc[-1]
         action, confidence, trend = generate_signal(latest_data)
         rsi_val = round(float(latest_data["RSI_14"]), 2)
+        stop_levels = calculate_stop_levels(data_with_indicators, action)
 
         return {
             "status": "success",
             "data": {
                 "action": action,
                 "confidence_score": confidence,
-                "reason": f"Signal '{action}' generated. Trend: {trend}, RSI: {rsi_val}.",
+                "reason": f"Signal '{action}' generated. Trend: {trend}, RSI: {rsi_val}, volatility: {stop_levels['volatility_regime']}.",
                 "current_price": round(float(latest_data["Close"]), 2),
                 "indicators": {
                     "trend": trend,
                     "rsi": rsi_val,
                     "macd_line": round(float(latest_data["MACD_12_26_9"]), 2),
                     "macd_signal": round(float(latest_data["MACDs_12_26_9"]), 2),
+                    "atr": stop_levels["atr"],
+                    "atr_percent": stop_levels["atr_percent"],
+                    "atr_stop_long": stop_levels["atr_stop_long"],
+                    "atr_stop_short": stop_levels["atr_stop_short"],
+                    "swing_low": stop_levels["swing_low"],
+                    "swing_high": stop_levels["swing_high"],
+                    "stop_loss": stop_levels["stop_loss"],
+                    "stop_method": stop_levels["stop_method"],
+                    "volatility_regime": stop_levels["volatility_regime"],
+                    "timeframe": timeframe,
                 }
             },
             "error": None
@@ -308,7 +346,11 @@ def main():
         sys.exit(1)
 
     ticker_arg = sys.argv[1]
+    timeframe_arg = "1d"
     is_mock = "--mock" in sys.argv
+    for arg in sys.argv[2:]:
+        if arg.startswith("--timeframe="):
+            timeframe_arg = arg.split("=", 1)[1]
 
     if is_mock:
         # Return mock data for CI validation to avoid yfinance rate limits
@@ -317,6 +359,10 @@ def main():
             "rsi": 30.0,
             "macd_line": 0.5,
             "macd_signal": 0.2,
+            "atr": 1.25,
+            "volatility_regime": "normal",
+            "stop_loss": 95.0,
+            "timeframe": _normalise_timeframe(timeframe_arg),
             "signal": "hold",
             "confidence_score": 0.5,
             "reasoning": "Mock data for CI validation."
@@ -325,21 +371,23 @@ def main():
         return
 
     try:
-        # We don't have a correlation_id in the CLI context
-        analysis_result = analyze_stock(ticker_arg)
+        analysis_result = analyze_stock(ticker_arg, timeframe=timeframe_arg)
         data = analysis_result["data"]
 
-        # Check if the analysis resulted in a known business logic error
         if data["reason"] in ["ticker_not_found", "analysis_error"]:
             print(json.dumps({"error": data["reason"]}), file=sys.stderr)
             sys.exit(1)
 
-        # Adapt the new nested structure to the old flat CI structure
+        indicators = data["indicators"]
         cli_output = {
-            "trend": data["indicators"]["trend"],
-            "rsi": data["indicators"]["rsi"],
-            "macd_line": data["indicators"]["macd_line"],
-            "macd_signal": data["indicators"]["macd_signal"],
+            "trend": indicators["trend"],
+            "rsi": indicators["rsi"],
+            "macd_line": indicators["macd_line"],
+            "macd_signal": indicators["macd_signal"],
+            "atr": indicators["atr"],
+            "volatility_regime": indicators["volatility_regime"],
+            "stop_loss": indicators["stop_loss"],
+            "timeframe": indicators["timeframe"],
             "signal": data["action"].lower(),
             "confidence_score": data["confidence_score"],
             "reasoning": data["reason"]
@@ -347,7 +395,6 @@ def main():
         print(json.dumps(cli_output, indent=4))
 
     except Exception as e:
-        # This will now only catch unexpected system errors during CLI execution
         logging.critical(f"An unexpected system error occurred in CLI mode: {e}")
         print(json.dumps({"error": f"An unexpected error occurred: {e}"}), file=sys.stderr)
         sys.exit(1)
