@@ -16,7 +16,7 @@ app = FastAPI(
     title="Technical Analysis Agent",
     description="An API for performing technical analysis on stock tickers, "
     "conforming to the Orchestrator's canonical schema.",
-    version="1.1.0",
+    version="1.2.0",
 )
 
 
@@ -36,22 +36,19 @@ def analyze_ticker_endpoint(
     Analyzes a stock ticker and returns a result conforming to the
     Orchestrator's canonical schema.
 
-    - **Receives**: A stock `ticker` and an optional `X-Correlation-ID` header.
+    - **Receives**: A stock `ticker`, optional `timeframe`, and optional `X-Correlation-ID` header.
     - **Returns**: A structured JSON response with an `action`, `confidence`,
-      `reason`, and other relevant data.
+      `reason`, risk-aware technical levels, and other relevant data.
     - **Error Handling**: Business logic errors (e.g., ticker not found) are
       handled gracefully and returned with an HTTP 200 status code,
       with the error details encoded in the `reason` field.
     """
-    # The service function now handles internal errors and returns the
-    # appropriate dictionary structure for both success and failure cases.
     service_result = analyze_stock(
         ticker=request.ticker,
+        timeframe=request.timeframe,
         correlation_id=x_correlation_id
     )
 
-    # Map the service result data to the new StandardAgentData model
-    # Note: confidence_score is used, and action is ensured to be lowercase
     raw_data = service_result["data"]
     analysis_data = StandardAgentData(
         action=Action(raw_data["action"].lower()),
@@ -61,11 +58,10 @@ def analyze_ticker_endpoint(
         indicators=raw_data.get("indicators")
     )
 
-    # Instantiate the StandardAgentResponse model.
     return StandardAgentResponse(
         status=service_result["status"],
         agent_type="technical",
-        version="1.1.0",
+        version="1.2.0",
         data=analysis_data,
         error=service_result.get("error")
     )
@@ -77,7 +73,7 @@ def health_check():
     return StandardAgentResponse(
         status="success",
         agent_type="technical",
-        version="1.1.0",
+        version="1.2.0",
         data={"status": "ok"}
     )
 
