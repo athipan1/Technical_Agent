@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Generic, Literal, Optional, TypeVar
+from typing import Generic, Literal, Optional, TypeVar, List, Dict, Any
 from pydantic import BaseModel, Field
 
 T = TypeVar('T')
@@ -28,6 +28,10 @@ class Indicators(BaseModel):
     stop_method: Optional[str] = None
     volatility_regime: Optional[str] = None
     timeframe: Optional[str] = None
+    confidence_cap: Optional[float] = None
+    raw_confidence_score: Optional[float] = None
+    validation_status: Optional[str] = None
+    walk_forward_passed: Optional[bool] = None
 
 
 class StandardAgentData(BaseModel):
@@ -56,3 +60,38 @@ class AnalyzeRequest(BaseModel):
     """Defines the structure for the incoming request body."""
     ticker: str = Field(..., description="The stock ticker symbol to be analyzed.", example="AOT.BK")
     timeframe: str = Field("1d", description="Candle timeframe such as 1d, 1h, 30m, or 15m.", example="1d")
+
+
+class WalkForwardRequest(BaseModel):
+    ticker: str = Field(..., example="AAPL")
+    timeframe: str = Field("1d", example="1d")
+    min_train_bars: int = Field(180, ge=60)
+    test_bars: int = Field(30, ge=5)
+    step_bars: int = Field(30, ge=5)
+
+
+class WalkForwardWindow(BaseModel):
+    train_start: str
+    train_end: str
+    test_start: str
+    test_end: str
+    trades: int
+    win_rate: float
+    profit_factor: float
+    max_drawdown: float
+    sharpe: float
+    passed: bool
+
+
+class WalkForwardReport(BaseModel):
+    ticker: str
+    timeframe: str
+    windows: int
+    avg_win_rate: float
+    avg_profit_factor: float
+    avg_max_drawdown: float
+    avg_sharpe: float
+    passed: bool
+    confidence_cap: float
+    criteria: Dict[str, Any]
+    window_results: List[WalkForwardWindow]
