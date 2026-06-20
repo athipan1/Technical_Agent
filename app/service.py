@@ -5,35 +5,44 @@ import warnings
 import time
 import urllib.request
 import urllib.parse
+import math
 import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
 
 from risk_controls import calculate_atr, calculate_stop_levels
 
-# --- Setup ---
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="yfinance")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+MAX_CONFIDENCE = 0.80
+MIN_WALK_FORWARD_PROFIT_FACTOR = 1.20
+MIN_WALK_FORWARD_SHARPE = 1.00
+MAX_WALK_FORWARD_DRAWDOWN = 0.20
 
-# --- Custom Exceptions ---
+
 class TickerNotFound(Exception):
-    """Custom exception for when a ticker is not found or has no data."""
     pass
 
 
 class AnalysisError(Exception):
-    """Custom exception for errors during the analysis process."""
     pass
 
 
 TIMEFRAME_CONFIG = {
-    "1d": {"periods": ["2y", "1y", "6mo"], "interval": "1d", "chart_days": 730},
+    "1d": {"periods": ["5y", "2y", "1y", "6mo"], "interval": "1d", "chart_days": 1825},
     "1h": {"periods": ["730d", "365d", "90d"], "interval": "1h", "chart_days": 730},
     "30m": {"periods": ["60d", "30d"], "interval": "30m", "chart_days": 60},
     "15m": {"periods": ["60d", "30d"], "interval": "15m", "chart_days": 60},
 }
+
+
+def cap_confidence(raw_confidence: float) -> float:
+    try:
+        return max(0.0, min(float(raw_confidence), MAX_CONFIDENCE))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _normalise_timeframe(timeframe: str | None) -> str:
@@ -41,14 +50,11 @@ def _normalise_timeframe(timeframe: str | None) -> str:
     return value if value in TIMEFRAME_CONFIG else "1d"
 
 
-# --- Core Functions ---
 def _normalize_ohlcv_columns(data: pd.DataFrame) -> pd.DataFrame:
     if data is None or data.empty:
         return pd.DataFrame()
-
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.droplevel(1)
-
     rename_map = {}
     for col in data.columns:
         normalized = str(col).strip().lower()
@@ -64,16 +70,12 @@ def _normalize_ohlcv_columns(data: pd.DataFrame) -> pd.DataFrame:
             rename_map[col] = "Adj Close"
         elif normalized == "volume":
             rename_map[col] = "Volume"
-    data = data.rename(columns=rename_map)
-    return data
+    return data.rename(columns=rename_map)
 
 
 def _fetch_with_yfinance(ticker: str, timeframe: str = "1d") -> pd.DataFrame:
     config = TIMEFRAME_CONFIG[_normalise_timeframe(timeframe)]
-    attempts = [
-        {"period": period, "interval": config["interval"], "auto_adjust": False}
-        for period in config["periods"]
-    ]
+    attempts = [{"period": period, "interval": config["interval"], "auto_adjust": False} for period in config["periods"]]
     for kwargs in attempts:
         try:
             data = yf.download(ticker, progress=False, threads=False, **kwargs)
@@ -86,103 +88,62 @@ def _fetch_with_yfinance(ticker: str, timeframe: str = "1d") -> pd.DataFrame:
 
 
 def _fetch_with_yahoo_chart(ticker: str, timeframe: str = "1d") -> pd.DataFrame:
-    """Fetch candles directly from Yahoo Chart API as a fallback."""
     timeframe = _normalise_timeframe(timeframe)
     config = TIMEFRAME_CONFIG[timeframe]
     period2 = int(time.time())
     period1 = period2 - (int(config["chart_days"]) * 24 * 60 * 60)
     symbol = urllib.parse.quote(ticker.upper())
     interval = config["interval"]
-    url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-        f"?period1={period1}&period2={period2}&interval={interval}&events=history&includeAdjustedClose=true"
-    )
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (compatible; TechnicalAgent/1.0)",
-            "Accept": "application/json",
-        },
-    )
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?period1={period1}&period2={period2}&interval={interval}&events=history&includeAdjustedClose=true"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; TechnicalAgent/1.0)", "Accept": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
         logging.warning(f"Yahoo chart fallback failed for {ticker}: {exc}")
         return pd.DataFrame()
-
     result = ((payload.get("chart") or {}).get("result") or [])
     if not result:
         return pd.DataFrame()
-
     item = result[0]
     timestamps = item.get("timestamp") or []
     quote = ((item.get("indicators") or {}).get("quote") or [{}])[0]
     adjclose = ((item.get("indicators") or {}).get("adjclose") or [{}])[0].get("adjclose")
-
     if not timestamps or not quote.get("close"):
         return pd.DataFrame()
-
-    data = pd.DataFrame(
-        {
-            "Open": quote.get("open"),
-            "High": quote.get("high"),
-            "Low": quote.get("low"),
-            "Close": quote.get("close"),
-            "Volume": quote.get("volume"),
-        },
-        index=pd.to_datetime(timestamps, unit="s", utc=True).tz_convert(None),
-    )
+    data = pd.DataFrame({"Open": quote.get("open"), "High": quote.get("high"), "Low": quote.get("low"), "Close": quote.get("close"), "Volume": quote.get("volume")}, index=pd.to_datetime(timestamps, unit="s", utc=True).tz_convert(None))
     if adjclose:
         data["Adj Close"] = adjclose
-
-    data = data.dropna(subset=["Close"])
-    return data
+    return data.dropna(subset=["Close"])
 
 
 def get_stock_data(ticker: str, timeframe: str = "1d") -> pd.DataFrame:
-    """
-    Fetches historical stock data using yfinance first and Yahoo Chart API as fallback.
-
-    Raises:
-        TickerNotFound: If the ticker is not found or has no data.
-    """
     stock_ticker = ticker.upper().strip()
     timeframe = _normalise_timeframe(timeframe)
-
     data = _fetch_with_yfinance(stock_ticker, timeframe)
     if data.empty:
-        logging.info(f"yfinance returned no data for {stock_ticker}; trying Yahoo Chart API fallback.")
         data = _fetch_with_yahoo_chart(stock_ticker, timeframe)
-
     data = _normalize_ohlcv_columns(data)
     if data.empty or "Close" not in data.columns:
         raise TickerNotFound(f"No data found for ticker '{stock_ticker}'.")
-
     data = data.dropna(subset=["Close"])
     if data.empty:
         raise TickerNotFound(f"No usable close data found for ticker '{stock_ticker}'.")
-
     return data
 
 
 def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
-    """
-    Calculates technical indicators and appends them.
-    Includes fallback mechanisms to prevent crashes.
-    """
+    data = data.copy()
     try:
         data.ta.sma(length=200, append=True)
     except Exception as e:
         logging.warning(f"SMA calculation failed: {e}. Defaulting to rolling mean.")
         data['SMA_200'] = data['Close'].rolling(window=min(200, len(data)), min_periods=1).mean()
-
     try:
         data.ta.rsi(length=14, append=True)
     except Exception as e:
         logging.warning(f"RSI calculation failed: {e}. Defaulting to 50.")
         data['RSI_14'] = 50.0
-
     try:
         data.ta.macd(fast=12, slow=26, signal=9, append=True)
     except Exception as e:
@@ -190,24 +151,16 @@ def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
         data['MACD_12_26_9'] = 0.0
         data['MACDh_12_26_9'] = 0.0
         data['MACDs_12_26_9'] = 0.0
-
     try:
         atr = ta.atr(high=data['High'], low=data['Low'], close=data['Close'], length=14)
         data['ATR_14'] = atr
     except Exception as e:
         logging.warning(f"ATR calculation failed: {e}. Defaulting to manual ATR.")
         data['ATR_14'] = calculate_atr(data, length=14)
-
     return data
 
 
 def check_data_quality(data: pd.DataFrame, ticker: str):
-    """
-    Checks if the latest data has all required indicators for analysis.
-
-    Raises:
-        AnalysisError: If data is missing or NaN for required indicators.
-    """
     latest_data = data.iloc[-1]
     required_columns = ['Close', 'High', 'Low', 'SMA_200', 'RSI_14', 'MACD_12_26_9', 'MACDs_12_26_9', 'ATR_14']
     for col in required_columns:
@@ -216,62 +169,142 @@ def check_data_quality(data: pd.DataFrame, ticker: str):
 
 
 def generate_signal(latest_data: pd.Series) -> tuple[str, float, str]:
-    """
-    Generates a trading signal based on technical indicators.
-    """
     price = latest_data['Close']
     sma200 = latest_data['SMA_200']
     rsi = latest_data['RSI_14']
     macd_line = latest_data['MACD_12_26_9']
     macd_signal = latest_data['MACDs_12_26_9']
-
-    # 1. Determine Trend
     if price > sma200:
         trend = "Uptrend"
     elif price < sma200:
         trend = "Downtrend"
     else:
         trend = "Sideways"
-
-    # 2. Generate Signal based on Trend
     action = "hold"
     if trend == "Uptrend" and rsi < 30 and macd_line > macd_signal:
         action = "buy"
     elif trend == "Downtrend" and rsi > 70 and macd_line < macd_signal:
         action = "sell"
+    raw_confidence = 0.75 if action in ["buy", "sell"] else 0.5
+    return action, raw_confidence, trend
 
-    # 3. Apply confidence score heuristic
-    if action in ["buy", "sell"]:
-        confidence = 0.75
-    else:  # hold
-        confidence = 0.5
 
-    return action, confidence, trend
+def _safe_sharpe(returns: list[float]) -> float:
+    if not returns:
+        return 0.0
+    series = pd.Series(returns)
+    std = float(series.std()) if len(series) > 1 else 0.0
+    if std == 0:
+        return 0.0
+    return float(series.mean() / std * math.sqrt(252))
+
+
+def _max_drawdown(equity_curve: list[float]) -> float:
+    peak = equity_curve[0] if equity_curve else 1.0
+    max_dd = 0.0
+    for value in equity_curve:
+        peak = max(peak, value)
+        if peak > 0:
+            max_dd = max(max_dd, (peak - value) / peak)
+    return max_dd
+
+
+def _evaluate_window(test_data: pd.DataFrame) -> dict:
+    returns = []
+    wins = 0
+    losses = 0
+    gross_profit = 0.0
+    gross_loss = 0.0
+    equity = [1.0]
+    for idx in range(len(test_data) - 1):
+        row = test_data.iloc[idx]
+        next_close = float(test_data.iloc[idx + 1]['Close'])
+        close = float(row['Close'])
+        action, _, _ = generate_signal(row)
+        if action == "hold" or close == 0:
+            continue
+        pct = (next_close - close) / close
+        trade_return = pct if action == "buy" else -pct
+        returns.append(trade_return)
+        equity.append(equity[-1] * (1 + trade_return))
+        if trade_return >= 0:
+            wins += 1
+            gross_profit += trade_return
+        else:
+            losses += 1
+            gross_loss += abs(trade_return)
+    trades = len(returns)
+    win_rate = wins / trades if trades else 0.0
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else (gross_profit if gross_profit > 0 else 0.0)
+    max_dd = _max_drawdown(equity)
+    sharpe = _safe_sharpe(returns)
+    passed = trades > 0 and profit_factor >= MIN_WALK_FORWARD_PROFIT_FACTOR and sharpe >= MIN_WALK_FORWARD_SHARPE and max_dd <= MAX_WALK_FORWARD_DRAWDOWN
+    return {"trades": trades, "win_rate": win_rate, "profit_factor": profit_factor, "max_drawdown": max_dd, "sharpe": sharpe, "passed": passed}
+
+
+def walk_forward_validate(ticker: str, timeframe: str = "1d", min_train_bars: int = 180, test_bars: int = 30, step_bars: int = 30) -> dict:
+    timeframe = _normalise_timeframe(timeframe)
+    data = calculate_indicators(get_stock_data(ticker, timeframe)).dropna(subset=["Close", "SMA_200", "RSI_14", "MACD_12_26_9", "MACDs_12_26_9"])
+    if len(data) < min_train_bars + test_bars:
+        raise AnalysisError("Not enough data for walk-forward validation.")
+    windows = []
+    start = min_train_bars
+    while start + test_bars <= len(data):
+        train = data.iloc[:start]
+        test = data.iloc[start:start + test_bars]
+        metrics = _evaluate_window(test)
+        windows.append({
+            "train_start": str(train.index[0]),
+            "train_end": str(train.index[-1]),
+            "test_start": str(test.index[0]),
+            "test_end": str(test.index[-1]),
+            **metrics,
+        })
+        start += step_bars
+    if not windows:
+        raise AnalysisError("No walk-forward windows could be generated.")
+    avg_pf = sum(w["profit_factor"] for w in windows) / len(windows)
+    avg_sharpe = sum(w["sharpe"] for w in windows) / len(windows)
+    avg_dd = sum(w["max_drawdown"] for w in windows) / len(windows)
+    avg_wr = sum(w["win_rate"] for w in windows) / len(windows)
+    passed = avg_pf >= MIN_WALK_FORWARD_PROFIT_FACTOR and avg_sharpe >= MIN_WALK_FORWARD_SHARPE and avg_dd <= MAX_WALK_FORWARD_DRAWDOWN
+    return {
+        "ticker": ticker.upper(),
+        "timeframe": timeframe,
+        "windows": len(windows),
+        "avg_win_rate": round(avg_wr, 4),
+        "avg_profit_factor": round(avg_pf, 4),
+        "avg_max_drawdown": round(avg_dd, 4),
+        "avg_sharpe": round(avg_sharpe, 4),
+        "passed": bool(passed),
+        "confidence_cap": MAX_CONFIDENCE,
+        "criteria": {
+            "min_profit_factor": MIN_WALK_FORWARD_PROFIT_FACTOR,
+            "min_sharpe": MIN_WALK_FORWARD_SHARPE,
+            "max_drawdown": MAX_WALK_FORWARD_DRAWDOWN,
+        },
+        "window_results": windows,
+    }
 
 
 def analyze_stock(ticker: str, timeframe: str = "1d", correlation_id: str = None) -> dict:
-    """
-    Analyzes a stock and returns a structured response for the orchestrator.
-    Handles errors gracefully by returning a specific JSON structure.
-    """
     timeframe = _normalise_timeframe(timeframe)
     logging.info(f"Analysis started for ticker: '{ticker}', timeframe: '{timeframe}', correlation_id: '{correlation_id}'")
     try:
         data = get_stock_data(ticker, timeframe)
         data_with_indicators = calculate_indicators(data)
         check_data_quality(data_with_indicators, ticker)
-
         latest_data = data_with_indicators.iloc[-1]
-        action, confidence, trend = generate_signal(latest_data)
+        action, raw_confidence, trend = generate_signal(latest_data)
+        confidence = cap_confidence(raw_confidence)
         rsi_val = round(float(latest_data["RSI_14"]), 2)
         stop_levels = calculate_stop_levels(data_with_indicators, action)
-
         return {
             "status": "success",
             "data": {
                 "action": action,
                 "confidence_score": confidence,
-                "reason": f"Signal '{action}' generated. Trend: {trend}, RSI: {rsi_val}, volatility: {stop_levels['volatility_regime']}.",
+                "reason": f"Signal '{action}' generated. Trend: {trend}, RSI: {rsi_val}, volatility: {stop_levels['volatility_regime']}. Confidence capped at {MAX_CONFIDENCE}.",
                 "current_price": round(float(latest_data["Close"]), 2),
                 "indicators": {
                     "trend": trend,
@@ -288,115 +321,49 @@ def analyze_stock(ticker: str, timeframe: str = "1d", correlation_id: str = None
                     "stop_method": stop_levels["stop_method"],
                     "volatility_regime": stop_levels["volatility_regime"],
                     "timeframe": timeframe,
+                    "confidence_cap": MAX_CONFIDENCE,
+                    "raw_confidence_score": raw_confidence,
+                    "validation_status": "walk_forward_required_before_live",
+                    "walk_forward_passed": None,
                 }
             },
             "error": None
         }
     except TickerNotFound:
-        logging.warning(f"Ticker not found for '{ticker}', correlation_id: '{correlation_id}'")
-        return {
-            "status": "error",
-            "data": {
-                "action": "hold",
-                "confidence_score": 0.0,
-                "reason": "ticker_not_found"
-            },
-            "error": {
-                "code": "TICKER_NOT_FOUND",
-                "message": f"No data found for ticker '{ticker}'",
-                "retryable": False
-            }
-        }
+        return {"status": "error", "data": {"action": "hold", "confidence_score": 0.0, "reason": "ticker_not_found"}, "error": {"code": "TICKER_NOT_FOUND", "message": f"No data found for ticker '{ticker}'", "retryable": False}}
     except AnalysisError as e:
-        logging.error(f"Analysis error for '{ticker}': {e}, correlation_id: '{correlation_id}'")
-        return {
-            "status": "error",
-            "data": {
-                "action": "hold",
-                "confidence_score": 0.0,
-                "reason": "analysis_error"
-            },
-            "error": {
-                "code": "ANALYSIS_ERROR",
-                "message": str(e),
-                "retryable": False
-            }
-        }
+        return {"status": "error", "data": {"action": "hold", "confidence_score": 0.0, "reason": "analysis_error"}, "error": {"code": "ANALYSIS_ERROR", "message": str(e), "retryable": False}}
     except Exception as e:
         logging.exception(f"Unexpected technical analysis error for '{ticker}': {e}, correlation_id: '{correlation_id}'")
-        return {
-            "status": "error",
-            "data": {
-                "action": "hold",
-                "confidence_score": 0.0,
-                "reason": "analysis_error"
-            },
-            "error": {
-                "code": "ANALYSIS_ERROR",
-                "message": str(e),
-                "retryable": True
-            }
-        }
+        return {"status": "error", "data": {"action": "hold", "confidence_score": 0.0, "reason": "analysis_error"}, "error": {"code": "ANALYSIS_ERROR", "message": str(e), "retryable": True}}
 
 
 def main():
-    """Handles the command-line interface execution for CI/local testing."""
     if len(sys.argv) < 2:
         print(json.dumps({"error": "Please provide a stock ticker."}), file=sys.stderr)
         sys.exit(1)
-
     ticker_arg = sys.argv[1]
     timeframe_arg = "1d"
     is_mock = "--mock" in sys.argv
     for arg in sys.argv[2:]:
         if arg.startswith("--timeframe="):
             timeframe_arg = arg.split("=", 1)[1]
-
     if is_mock:
-        # Return mock data for CI validation to avoid yfinance rate limits
-        cli_output = {
-            "trend": "Uptrend",
-            "rsi": 30.0,
-            "macd_line": 0.5,
-            "macd_signal": 0.2,
-            "atr": 1.25,
-            "volatility_regime": "normal",
-            "stop_loss": 95.0,
-            "timeframe": _normalise_timeframe(timeframe_arg),
-            "signal": "hold",
-            "confidence_score": 0.5,
-            "reasoning": "Mock data for CI validation."
-        }
+        cli_output = {"trend": "Uptrend", "rsi": 30.0, "macd_line": 0.5, "macd_signal": 0.2, "atr": 1.25, "volatility_regime": "normal", "stop_loss": 95.0, "timeframe": _normalise_timeframe(timeframe_arg), "signal": "hold", "confidence_score": 0.5, "confidence_cap": MAX_CONFIDENCE, "reasoning": "Mock data for CI validation."}
         print(json.dumps(cli_output, indent=4))
         return
-
     try:
         analysis_result = analyze_stock(ticker_arg, timeframe=timeframe_arg)
         data = analysis_result["data"]
-
         if data["reason"] in ["ticker_not_found", "analysis_error"]:
             print(json.dumps({"error": data["reason"]}), file=sys.stderr)
             sys.exit(1)
-
         indicators = data["indicators"]
-        cli_output = {
-            "trend": indicators["trend"],
-            "rsi": indicators["rsi"],
-            "macd_line": indicators["macd_line"],
-            "macd_signal": indicators["macd_signal"],
-            "atr": indicators["atr"],
-            "volatility_regime": indicators["volatility_regime"],
-            "stop_loss": indicators["stop_loss"],
-            "timeframe": indicators["timeframe"],
-            "signal": data["action"].lower(),
-            "confidence_score": data["confidence_score"],
-            "reasoning": data["reason"]
-        }
+        cli_output = {"trend": indicators["trend"], "rsi": indicators["rsi"], "macd_line": indicators["macd_line"], "macd_signal": indicators["macd_signal"], "atr": indicators.get("atr"), "volatility_regime": indicators.get("volatility_regime"), "stop_loss": indicators.get("stop_loss"), "timeframe": indicators.get("timeframe"), "signal": data["action"], "confidence_score": data["confidence_score"], "confidence_cap": indicators.get("confidence_cap"), "reasoning": data["reason"]}
         print(json.dumps(cli_output, indent=4))
-
     except Exception as e:
-        logging.critical(f"An unexpected system error occurred in CLI mode: {e}")
-        print(json.dumps({"error": f"An unexpected error occurred: {e}"}), file=sys.stderr)
+        logging.exception("CLI execution failed")
+        print(json.dumps({"error": str(e)}), file=sys.stderr)
         sys.exit(1)
 
 
