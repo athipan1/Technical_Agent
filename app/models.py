@@ -1,9 +1,13 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Generic, Literal, Optional, TypeVar, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 T = TypeVar('T')
+
+TECHNICAL_AGENT_TYPE = "technical"
+TECHNICAL_AGENT_VERSION = "1.3.0"
+SCHEMA_VERSION = "1.0"
 
 
 class Action(str, Enum):
@@ -49,11 +53,23 @@ class StandardAgentData(BaseModel):
 class StandardAgentResponse(BaseModel, Generic[T]):
     """The final response schema expected by the Orchestrator."""
     status: Literal["success", "error"]
-    agent_type: str = "technical"
-    version: str = "1.0.0"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    agent_type: str = TECHNICAL_AGENT_TYPE
+    version: str = TECHNICAL_AGENT_VERSION
+    schema_version: str = SCHEMA_VERSION
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    correlation_id: Optional[str] = None
     data: Optional[T] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     error: Optional[dict] = None
+    confidence_score: Optional[float] = None
+
+    @field_validator("schema_version")
+    @classmethod
+    def schema_version_must_be_semantic(cls, value: str) -> str:
+        parts = value.split(".")
+        if not all(part.isdigit() for part in parts):
+            raise ValueError('Schema version must be in semantic format (e.g., "1.0")')
+        return value
 
 
 class AnalyzeRequest(BaseModel):
