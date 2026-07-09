@@ -85,7 +85,10 @@ class StandardAgentData(BaseModel):
 
     @model_validator(mode="after")
     def populate_technical_evidence(self):
-        from technical_evidence import build_technical_evidence
+        try:
+            from .technical_evidence import build_technical_evidence
+        except ImportError:
+            from technical_evidence import build_technical_evidence
 
         evidence = build_technical_evidence(
             action=self.action.value,
