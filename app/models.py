@@ -85,17 +85,51 @@ class StandardAgentData(BaseModel):
 
     @model_validator(mode="after")
     def populate_technical_evidence(self):
-        try:
-            from .technical_evidence import build_technical_evidence
-        except ImportError:
-            from technical_evidence import build_technical_evidence
+        if self.indicators is None:
+            evidence = {
+                "evidence_version": TECHNICAL_EVIDENCE_VERSION,
+                "evidence_status": "insufficient",
+                "evidence_completeness_score": 0.0,
+                "raw_scores": {},
+                "metrics": {},
+                "available_fields": [],
+                "missing_fields": [
+                    "technical_score",
+                    "trend_score",
+                    "momentum_score",
+                    "relative_strength_score",
+                    "indicator_score",
+                    "technical_vote_score",
+                    "volatility_score",
+                    "breakout_ratio",
+                    "volume_ratio",
+                    "current_price",
+                    "support_level",
+                    "resistance_level",
+                    "timeframe",
+                ],
+                "evidence_reasons": ["technical_indicators_unavailable"],
+                "provenance": {
+                    "evidence_source": "unavailable",
+                    "validation_status": "unavailable",
+                },
+                "strategy_bucket_hint": None,
+                "bucket_decision_authority": "manager",
+                "manager_decision_required": True,
+            }
+        else:
+            try:
+                from .technical_evidence import build_technical_evidence
+            except ImportError:
+                from technical_evidence import build_technical_evidence
 
-        evidence = build_technical_evidence(
-            action=self.action.value,
-            confidence_score=self.confidence_score,
-            current_price=self.current_price,
-            indicators=self.indicators,
-        )
+            evidence = build_technical_evidence(
+                action=self.action.value,
+                confidence_score=self.confidence_score,
+                current_price=self.current_price,
+                indicators=self.indicators,
+            )
+
         self.technical_evidence = TechnicalEvidenceContract.model_validate(
             evidence
         )
