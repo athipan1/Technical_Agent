@@ -23,7 +23,7 @@ REQUIRED_STANDARD_RESPONSE_FIELDS = {
 def assert_standard_response(payload):
     assert REQUIRED_STANDARD_RESPONSE_FIELDS.issubset(payload.keys())
     assert payload["agent_type"] == "technical"
-    assert payload["version"] == "1.3.0"
+    assert payload["version"] == "1.4.0"
     assert payload["schema_version"] == "1.0"
 
 
@@ -33,7 +33,7 @@ def test_standard_response_has_contract_defaults():
 
     assert REQUIRED_STANDARD_RESPONSE_FIELDS.issubset(payload.keys())
     assert payload["agent_type"] == "technical"
-    assert payload["version"] == "1.3.0"
+    assert payload["version"] == "1.4.0"
     assert payload["schema_version"] == "1.0"
     assert payload["correlation_id"] is None
     assert payload["metadata"] == {}
@@ -54,6 +54,8 @@ def test_version_endpoint_uses_standard_contract():
     assert_standard_response(payload)
     assert payload["data"]["api_contract"] == "multi-agent-trading-api-contract"
     assert payload["data"]["schema_version"] == "1.0"
+    assert payload["data"]["evidence_version"] == "technical-evidence-v1"
+    assert payload["metadata"]["bucket_decision_authority"] == "manager"
 
 
 def test_ready_endpoint_uses_standard_contract():
@@ -64,6 +66,8 @@ def test_ready_endpoint_uses_standard_contract():
     payload = response.json()
     assert_standard_response(payload)
     assert payload["data"]["ready"] is True
+    assert payload["data"]["evidence_version"] == "technical-evidence-v1"
+    assert payload["data"]["manager_decision_required"] is True
     assert payload["metadata"]["contract_source"] == "technical-agent-runtime-contract"
 
 
@@ -75,3 +79,5 @@ def test_health_endpoint_uses_standard_contract():
     payload = response.json()
     assert_standard_response(payload)
     assert payload["data"]["status"] == "ok"
+    assert payload["data"]["evidence_version"] == "technical-evidence-v1"
+    assert payload["data"]["bucket_decision_authority"] == "manager"
