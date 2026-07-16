@@ -85,7 +85,8 @@ def build_liquidity_evidence(
         volume = pd.to_numeric(frame["Volume"], errors="coerce")
 
     valid = pd.DataFrame({"close": close, "volume": volume}).replace(
-        [float("inf"), float("-inf")], pd.NA
+        [float("inf"), float("-inf")],
+        float("nan"),
     )
     if not valid.empty:
         valid = valid.dropna(subset=["close", "volume"])
