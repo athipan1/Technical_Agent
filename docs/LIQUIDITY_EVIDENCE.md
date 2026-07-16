@@ -33,9 +33,10 @@ It does not approve a trade, assign a strategy bucket, or bypass Backtest, Risk,
   "provenance": {
     "historical_source": "historical_ohlcv",
     "quote_source": "unavailable",
-    "calculation_method": "mean(close_times_volume)",
-    "volume_lookback_bars": 20,
-    "observed_bars": 20,
+    "calculation_method": "mean(daily_close_times_volume)",
+    "aggregation_mode": "daily_bars",
+    "volume_lookback_sessions": 20,
+    "observed_sessions": 20,
     "timeframe": "1d",
     "historical_as_of": "2026-07-15T00:00:00+00:00",
     "quote_as_of": null,
@@ -52,24 +53,40 @@ It does not approve a trade, assign a strategy bucket, or bypass Backtest, Risk,
 
 ## Calculations
 
-The default lookback is 20 bars.
+The default lookback is 20 daily sessions.
+
+For daily candles:
 
 ```text
-average_daily_volume = mean(volume)
-average_price = mean(close)
-average_dollar_volume = mean(close × volume)
-volume_ratio = latest_volume / average_daily_volume
+average_daily_volume = mean(daily volume)
+average_price = mean(daily close)
+average_dollar_volume = mean(daily close × daily volume)
+volume_ratio = latest daily volume / average_daily_volume
+```
+
+For intraday candles, Technical Agent first groups bars by UTC date:
+
+```text
+daily volume = sum(intraday volume)
+daily dollar volume = sum(intraday close × intraday volume)
+average_daily_volume = mean(daily volume)
+average_dollar_volume = mean(daily dollar volume)
+```
+
+Quote spread is calculated only from a supplied quote snapshot:
+
+```text
 midpoint = (bid + ask) / 2
 spread_bps = (ask - bid) / midpoint × 10,000
 ```
 
-`average_dollar_volume` uses the mean of each bar's dollar volume rather than multiplying two separately rounded averages.
+`average_dollar_volume` is never calculated by multiplying separately rounded averages.
 
 ## Safety behavior
 
 - NaN, Infinity, booleans, malformed strings, non-positive prices, and invalid quote pairs are not accepted as evidence.
 - Missing bid/ask data is reported explicitly. No spread is synthesized.
-- A bid greater than the ask is invalid and produces no spread value.
+- A bid greater than the ask invalidates the quote pair and produces no bid, ask, or spread evidence.
 - Manager remains the only component allowed to apply investability thresholds.
 - Missing liquidity fields are warnings until Manager explicitly enables required liquidity gates.
 
