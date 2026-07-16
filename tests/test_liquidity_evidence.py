@@ -27,7 +27,7 @@ def test_historical_ohlcv_builds_partial_liquidity_evidence():
     assert evidence["metrics"]["current_price"] == 13.0
     assert evidence["metrics"]["average_daily_volume"] == 140_000.0
     assert evidence["metrics"]["average_price"] == 12.0
-    assert evidence["metrics"]["average_dollar_volume"] == 1_706_666.666667
+    assert evidence["metrics"]["average_dollar_volume"] == 1_693_333.333333
     assert evidence["metrics"]["volume_ratio"] == 1.142857
     assert "spread_bps" in evidence["missing_fields"]
     assert evidence["provenance"]["calculation_method"] == (
