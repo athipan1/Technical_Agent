@@ -15,6 +15,36 @@ def test_analyze_response_exposes_versioned_technical_evidence(monkeypatch):
                 "confidence_score": 0.75,
                 "reason": "test technical signal",
                 "current_price": 108.0,
+                "liquidity_evidence": {
+                    "evidence_version": "liquidity-evidence-v1",
+                    "evidence_status": "partial",
+                    "evidence_completeness_score": 0.5714,
+                    "metrics": {
+                        "current_price": 108.0,
+                        "average_daily_volume": 2_000_000.0,
+                        "average_dollar_volume": 216_000_000.0,
+                        "volume_ratio": 1.25,
+                    },
+                    "available_fields": [
+                        "average_daily_volume",
+                        "average_dollar_volume",
+                        "current_price",
+                        "volume_ratio",
+                    ],
+                    "missing_fields": ["ask", "bid", "spread_bps"],
+                    "evidence_reasons": [
+                        "average_dollar_volume_from_historical_ohlcv",
+                        "bid_ask_spread_unavailable",
+                    ],
+                    "provenance": {
+                        "historical_source": "historical_ohlcv",
+                        "quote_source": "unavailable",
+                        "calculation_method": "mean(close_times_volume)",
+                        "volume_lookback_bars": 20,
+                        "observed_bars": 20,
+                        "timeframe": timeframe,
+                    },
+                },
                 "indicators": {
                     "trend": "Uptrend",
                     "rsi": 62.0,
@@ -48,9 +78,13 @@ def test_analyze_response_exposes_versioned_technical_evidence(monkeypatch):
 
     assert response.status_code == 200
     assert body["status"] == "success"
-    assert body["version"] == "1.4.0"
+    assert body["version"] == "1.5.0"
     assert body["correlation_id"] == "technical-evidence-test"
     assert body["metadata"]["evidence_version"] == "technical-evidence-v1"
+    assert body["metadata"]["liquidity_evidence_version"] == (
+        "liquidity-evidence-v1"
+    )
+    assert body["metadata"]["liquidity_evidence_status"] == "partial"
     assert body["metadata"]["bucket_decision_authority"] == "manager"
     assert body["data"]["evidence_version"] == "technical-evidence-v1"
     assert body["data"]["manager_decision_required"] is True
@@ -58,10 +92,24 @@ def test_analyze_response_exposes_versioned_technical_evidence(monkeypatch):
     assert body["data"]["strategy_bucket_hint"] is None
     assert body["data"]["technical_score"] > 0.60
     assert body["data"]["raw_scores"]["trend_score"] == 0.80
+    assert body["data"]["raw_scores"]["volume_ratio"] == 1.25
+
+    liquidity = body["data"]["liquidity_evidence"]
+    assert liquidity["evidence_version"] == "liquidity-evidence-v1"
+    assert liquidity["metrics"]["average_dollar_volume"] == 216_000_000.0
+    assert "spread_bps" in liquidity["missing_fields"]
+
     evidence = body["data"]["technical_evidence"]
     assert evidence["strategy_bucket_hint"] is None
-    assert evidence["provenance"]["relative_strength_method"] == "local_swing_range_proxy"
-    assert "volume_ratio" in evidence["missing_fields"]
+    assert evidence["metrics"]["average_daily_volume"] == 2_000_000.0
+    assert evidence["metrics"]["average_dollar_volume"] == 216_000_000.0
+    assert evidence["provenance"]["relative_strength_method"] == (
+        "local_swing_range_proxy"
+    )
+    assert evidence["provenance"]["liquidity_evidence_version"] == (
+        "liquidity-evidence-v1"
+    )
+    assert "volume_ratio" not in evidence["missing_fields"]
 
 
 def test_analyze_error_response_reports_insufficient_evidence(monkeypatch):
@@ -90,9 +138,11 @@ def test_analyze_error_response_reports_insufficient_evidence(monkeypatch):
 
     assert response.status_code == 200
     assert body["status"] == "error"
+    assert body["metadata"]["liquidity_evidence_status"] == "unavailable"
     assert body["data"]["evidence_status"] == "insufficient"
     assert body["data"]["technical_score"] is None
     assert body["data"]["raw_scores"] == {}
+    assert body["data"]["liquidity_evidence"] is None
     assert body["data"]["technical_evidence"]["evidence_reasons"] == [
         "technical_indicators_unavailable"
     ]
