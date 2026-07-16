@@ -31,7 +31,41 @@ def test_historical_ohlcv_builds_partial_liquidity_evidence():
     assert evidence["metrics"]["volume_ratio"] == 1.142857
     assert "spread_bps" in evidence["missing_fields"]
     assert evidence["provenance"]["calculation_method"] == (
-        "mean(close_times_volume)"
+        "mean(daily_close_times_volume)"
+    )
+    assert evidence["provenance"]["aggregation_mode"] == "daily_bars"
+
+
+def test_intraday_bars_are_aggregated_into_daily_sessions():
+    frame = pd.DataFrame(
+        {
+            "Close": [10.0, 11.0, 12.0, 13.0],
+            "Volume": [100.0, 200.0, 300.0, 400.0],
+        },
+        index=pd.to_datetime(
+            [
+                "2026-01-02T14:30:00Z",
+                "2026-01-02T15:30:00Z",
+                "2026-01-03T14:30:00Z",
+                "2026-01-03T15:30:00Z",
+            ]
+        ),
+    )
+
+    evidence = build_liquidity_evidence(
+        frame,
+        timeframe="1h",
+        lookback_bars=20,
+    )
+
+    assert evidence["metrics"]["current_price"] == 13.0
+    assert evidence["metrics"]["latest_volume"] == 700.0
+    assert evidence["metrics"]["average_daily_volume"] == 500.0
+    assert evidence["metrics"]["average_dollar_volume"] == 6_000.0
+    assert evidence["metrics"]["volume_ratio"] == 1.4
+    assert evidence["provenance"]["observed_sessions"] == 2
+    assert evidence["provenance"]["aggregation_mode"] == (
+        "intraday_bars_aggregated_by_utc_date"
     )
 
 
@@ -62,7 +96,10 @@ def test_invalid_quote_is_not_manufactured():
     )
 
     assert evidence["evidence_status"] == "partial"
+    assert "bid" not in evidence["metrics"]
+    assert "ask" not in evidence["metrics"]
     assert "spread_bps" not in evidence["metrics"]
+    assert "bid_ask_quote_pair_invalid" in evidence["evidence_reasons"]
     assert "bid_ask_spread_unavailable" in evidence["evidence_reasons"]
 
 
