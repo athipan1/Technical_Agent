@@ -7,8 +7,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 T = TypeVar("T")
 
 TECHNICAL_AGENT_TYPE = "technical"
-TECHNICAL_AGENT_VERSION = "1.4.0"
+TECHNICAL_AGENT_VERSION = "1.5.0"
 TECHNICAL_EVIDENCE_VERSION = "technical-evidence-v1"
+LIQUIDITY_EVIDENCE_VERSION = "liquidity-evidence-v1"
 SCHEMA_VERSION = "1.0"
 
 
@@ -41,6 +42,19 @@ class Indicators(BaseModel):
     walk_forward_passed: Optional[bool] = None
 
 
+class LiquidityEvidenceContract(BaseModel):
+    """Versioned, non-binding market-liquidity evidence for Manager_Agent."""
+
+    evidence_version: str = LIQUIDITY_EVIDENCE_VERSION
+    evidence_status: Literal["complete", "partial", "unavailable"]
+    evidence_completeness_score: float = Field(ge=0.0, le=1.0)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    available_fields: List[str] = Field(default_factory=list)
+    missing_fields: List[str] = Field(default_factory=list)
+    evidence_reasons: List[str] = Field(default_factory=list)
+    provenance: Dict[str, Any] = Field(default_factory=dict)
+
+
 class TechnicalEvidenceContract(BaseModel):
     evidence_version: str = TECHNICAL_EVIDENCE_VERSION
     evidence_status: Literal["complete", "partial", "insufficient"]
@@ -64,6 +78,7 @@ class StandardAgentData(BaseModel):
     reason: str
     current_price: Optional[float] = None
     indicators: Optional[Indicators] = None
+    liquidity_evidence: Optional[LiquidityEvidenceContract] = None
     technical_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     raw_scores: Dict[str, Any] = Field(default_factory=dict)
     technical_evidence: Optional[TechnicalEvidenceContract] = None
@@ -112,6 +127,11 @@ class StandardAgentData(BaseModel):
                 "provenance": {
                     "evidence_source": "unavailable",
                     "validation_status": "unavailable",
+                    "liquidity_evidence_version": (
+                        self.liquidity_evidence.evidence_version
+                        if self.liquidity_evidence
+                        else None
+                    ),
                 },
                 "strategy_bucket_hint": None,
                 "bucket_decision_authority": "manager",
@@ -128,6 +148,7 @@ class StandardAgentData(BaseModel):
                 confidence_score=self.confidence_score,
                 current_price=self.current_price,
                 indicators=self.indicators,
+                liquidity_evidence=self.liquidity_evidence,
             )
 
         self.technical_evidence = TechnicalEvidenceContract.model_validate(
