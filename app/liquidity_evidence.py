@@ -55,6 +55,37 @@ def _spread_bps(bid: Optional[float], ask: Optional[float]) -> Optional[float]:
     return round(((ask - bid) / midpoint) * 10_000.0, 4)
 
 
+def _liquidity_window(
+    valid: pd.DataFrame,
+    *,
+    timeframe: str,
+    lookback: int,
+) -> tuple[pd.DataFrame, str]:
+    """Return daily observations, aggregating intraday bars when possible."""
+
+    if valid.empty:
+        return valid, "unavailable"
+
+    normalized_timeframe = str(timeframe or "1d").strip().lower()
+    prepared = valid.copy()
+    prepared["dollar_volume"] = prepared["close"] * prepared["volume"]
+
+    if normalized_timeframe == "1d":
+        return prepared.tail(lookback), "daily_bars"
+
+    if isinstance(prepared.index, pd.DatetimeIndex):
+        session_dates = pd.to_datetime(prepared.index, utc=True).date
+        prepared["session_date"] = session_dates
+        daily = prepared.groupby("session_date", sort=True).agg(
+            close=("close", "last"),
+            volume=("volume", "sum"),
+            dollar_volume=("dollar_volume", "sum"),
+        )
+        return daily.tail(lookback), "intraday_bars_aggregated_by_utc_date"
+
+    return prepared.tail(lookback), "per_bar_fallback_no_datetime_index"
+
+
 def build_liquidity_evidence(
     data: pd.DataFrame,
     *,
@@ -65,10 +96,9 @@ def build_liquidity_evidence(
 ) -> Dict[str, Any]:
     """Build non-binding liquidity evidence without inventing missing quotes.
 
-    Historical OHLCV provides average volume and average dollar volume. Bid/ask
-    spread is included only when a caller supplies a valid quote snapshot. The
-    contract therefore remains useful with Yahoo history while accurately
-    reporting partial evidence until a real-time quote provider is connected.
+    Historical OHLCV provides average daily volume and average daily dollar
+    volume. Intraday bars are aggregated by UTC session date before averaging.
+    Bid/ask spread is included only when a caller supplies a valid quote.
     """
 
     frame = data.copy() if isinstance(data, pd.DataFrame) else pd.DataFrame()
@@ -91,9 +121,16 @@ def build_liquidity_evidence(
     if not valid.empty:
         valid = valid.dropna(subset=["close", "volume"])
         valid = valid[(valid["close"] > 0) & (valid["volume"] >= 0)]
-    window = valid.tail(requested_lookback)
 
-    current_price = None
+    current_price = (
+        _positive_float(valid["close"].iloc[-1]) if not valid.empty else None
+    )
+    window, aggregation_mode = _liquidity_window(
+        valid,
+        timeframe=timeframe,
+        lookback=requested_lookback,
+    )
+
     latest_volume = None
     average_price = None
     average_daily_volume = None
@@ -101,12 +138,12 @@ def build_liquidity_evidence(
     volume_ratio = None
 
     if not window.empty:
-        current_price = _positive_float(window["close"].iloc[-1])
         latest_volume = _finite_float(window["volume"].iloc[-1])
         average_price = _positive_float(window["close"].mean())
         average_daily_volume = _finite_float(window["volume"].mean())
-        dollar_volume = window["close"] * window["volume"]
-        average_dollar_volume = _finite_float(dollar_volume.mean())
+        average_dollar_volume = _finite_float(
+            window["dollar_volume"].mean()
+        )
         if (
             latest_volume is not None
             and average_daily_volume is not None
@@ -126,6 +163,10 @@ def build_liquidity_evidence(
         else quote_data.get("ask_price")
     )
     spread_bps = _spread_bps(bid, ask)
+    quote_pair_invalid = bid is not None and ask is not None and spread_bps is None
+    if quote_pair_invalid:
+        bid = None
+        ask = None
 
     metrics = {
         "current_price": current_price,
@@ -161,6 +202,8 @@ def build_liquidity_evidence(
         reasons.append("average_dollar_volume_unavailable")
     else:
         reasons.append("average_dollar_volume_from_historical_ohlcv")
+    if quote_pair_invalid:
+        reasons.append("bid_ask_quote_pair_invalid")
     if spread_bps is None:
         reasons.append("bid_ask_spread_unavailable")
     else:
@@ -186,9 +229,10 @@ def build_liquidity_evidence(
     provenance = {
         "historical_source": source,
         "quote_source": quote_data.get("source") or "unavailable",
-        "calculation_method": "mean(close_times_volume)",
-        "volume_lookback_bars": requested_lookback,
-        "observed_bars": int(len(window)),
+        "calculation_method": "mean(daily_close_times_volume)",
+        "aggregation_mode": aggregation_mode,
+        "volume_lookback_sessions": requested_lookback,
+        "observed_sessions": int(len(window)),
         "timeframe": str(timeframe or "1d"),
         "historical_as_of": historical_as_of,
         "quote_as_of": quote_as_of,
