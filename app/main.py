@@ -7,6 +7,7 @@ try:
     from .models import (
         Action,
         AnalyzeRequest,
+        LIQUIDITY_EVIDENCE_VERSION,
         SCHEMA_VERSION,
         StandardAgentData,
         StandardAgentResponse,
@@ -21,6 +22,7 @@ except ImportError:
     from models import (
         Action,
         AnalyzeRequest,
+        LIQUIDITY_EVIDENCE_VERSION,
         SCHEMA_VERSION,
         StandardAgentData,
         StandardAgentResponse,
@@ -77,6 +79,7 @@ def version_check():
             "schema_version": SCHEMA_VERSION,
             "api_contract": "multi-agent-trading-api-contract",
             "evidence_version": TECHNICAL_EVIDENCE_VERSION,
+            "liquidity_evidence_version": LIQUIDITY_EVIDENCE_VERSION,
         },
         metadata={
             "required_operational_endpoints": [
@@ -105,6 +108,7 @@ def readiness_check():
             "supported_actions": ["buy", "sell", "hold"],
             "confidence_cap": 0.80,
             "evidence_version": TECHNICAL_EVIDENCE_VERSION,
+            "liquidity_evidence_version": LIQUIDITY_EVIDENCE_VERSION,
             "bucket_decision_authority": "manager",
             "manager_decision_required": True,
         },
@@ -137,6 +141,12 @@ def analyze_ticker_endpoint(
         reason=raw_data["reason"],
         current_price=raw_data.get("current_price"),
         indicators=raw_data.get("indicators"),
+        liquidity_evidence=raw_data.get("liquidity_evidence"),
+    )
+    liquidity_status = (
+        analysis_data.liquidity_evidence.evidence_status
+        if analysis_data.liquidity_evidence
+        else "unavailable"
     )
     return build_response(
         status=service_result["status"],
@@ -146,6 +156,8 @@ def analyze_ticker_endpoint(
         confidence_score=raw_data.get("confidence_score"),
         metadata={
             "evidence_version": TECHNICAL_EVIDENCE_VERSION,
+            "liquidity_evidence_version": LIQUIDITY_EVIDENCE_VERSION,
+            "liquidity_evidence_status": liquidity_status,
             "bucket_decision_authority": "manager",
             "manager_decision_required": True,
         },
@@ -211,6 +223,7 @@ def health_check():
             "confidence_cap": 0.80,
             "walk_forward_endpoint": "/validate/walk-forward",
             "evidence_version": TECHNICAL_EVIDENCE_VERSION,
+            "liquidity_evidence_version": LIQUIDITY_EVIDENCE_VERSION,
             "bucket_decision_authority": "manager",
         },
     )

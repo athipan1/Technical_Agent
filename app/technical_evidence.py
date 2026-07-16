@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, Mapping, Optional
 
 
@@ -15,11 +16,12 @@ def _mapping(value: Any) -> Dict[str, Any]:
 
 def _float_or_none(value: Any) -> Optional[float]:
     try:
-        if value is None or value == "":
+        if value is None or value == "" or isinstance(value, bool):
             return None
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    return number if math.isfinite(number) else None
 
 
 def _cap01(value: float) -> float:
@@ -112,13 +114,19 @@ def _vote_score(action: str) -> float:
 def _weighted_score(
     values: list[tuple[Optional[float], float]],
 ) -> Optional[float]:
-    available = [(float(value), weight) for value, weight in values if value is not None]
+    available = [
+        (float(value), weight)
+        for value, weight in values
+        if value is not None
+    ]
     if not available:
         return None
     total_weight = sum(weight for _, weight in available)
     if total_weight <= 0:
         return None
-    return _cap01(sum(value * weight for value, weight in available) / total_weight)
+    return _cap01(
+        sum(value * weight for value, weight in available) / total_weight
+    )
 
 
 def _evidence_status(completeness: float) -> str:
@@ -135,14 +143,15 @@ def build_technical_evidence(
     confidence_score: Any,
     current_price: Any,
     indicators: Mapping[str, Any] | None,
+    liquidity_evidence: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    """Build non-binding technical evidence for Scanner and Manager.
+    """Build non-binding technical and liquidity evidence for Manager_Agent."""
 
-    The contract reports directional and market-structure evidence only. It
-    never assigns a strategy bucket. Relative strength is explicitly a local
-    swing-range proxy because no benchmark series is available in this agent.
-    """
     indicator_data = _mapping(indicators)
+    liquidity_data = _mapping(liquidity_evidence)
+    liquidity_metrics = _mapping(liquidity_data.get("metrics"))
+    liquidity_provenance = _mapping(liquidity_data.get("provenance"))
+
     price = _float_or_none(current_price)
     trend = str(indicator_data.get("trend") or "").strip()
     rsi = _float_or_none(indicator_data.get("rsi"))
@@ -165,6 +174,17 @@ def build_technical_evidence(
         indicator_data.get("validation_status") or "unavailable"
     )
     walk_forward_passed = indicator_data.get("walk_forward_passed")
+
+    volume_ratio = _float_or_none(liquidity_metrics.get("volume_ratio"))
+    average_daily_volume = _float_or_none(
+        liquidity_metrics.get("average_daily_volume")
+    )
+    average_dollar_volume = _float_or_none(
+        liquidity_metrics.get("average_dollar_volume")
+    )
+    bid = _float_or_none(liquidity_metrics.get("bid"))
+    ask = _float_or_none(liquidity_metrics.get("ask"))
+    spread_bps = _float_or_none(liquidity_metrics.get("spread_bps"))
 
     trend_score = _trend_score(trend)
     rsi_component = _rsi_score(rsi)
@@ -213,7 +233,7 @@ def build_technical_evidence(
         "technical_vote_score": technical_vote_score,
         "volatility_score": volatility_score,
         "breakout_ratio": breakout_ratio,
-        "volume_ratio": None,
+        "volume_ratio": volume_ratio,
     }
     for key, value in score_values.items():
         if value is not None:
@@ -230,13 +250,20 @@ def build_technical_evidence(
         "support_level": _round_optional(support),
         "resistance_level": _round_optional(resistance),
         "breakout_ratio": breakout_ratio,
-        "volume_ratio": None,
+        "volume_ratio": _round_optional(volume_ratio),
+        "average_daily_volume": _round_optional(average_daily_volume),
+        "average_dollar_volume": _round_optional(average_dollar_volume),
+        "bid": _round_optional(bid),
+        "ask": _round_optional(ask),
+        "spread_bps": _round_optional(spread_bps),
         "timeframe": timeframe,
         "volatility_regime": indicator_data.get("volatility_regime"),
         "stop_loss": _round_optional(indicator_data.get("stop_loss")),
         "stop_method": indicator_data.get("stop_method"),
     }
-    metrics = {key: value for key, value in metrics.items() if value is not None}
+    metrics = {
+        key: value for key, value in metrics.items() if value is not None
+    }
 
     expected_fields = {
         "technical_score",
@@ -272,14 +299,20 @@ def build_technical_evidence(
         f"trend:{trend.lower() if trend else 'unavailable'}",
         f"validation_status:{validation_status}",
     ]
-    if volume_ratio := score_values.get("volume_ratio"):
-        reasons.append(f"volume_ratio:{volume_ratio}")
+    if volume_ratio is not None:
+        reasons.append(f"volume_ratio:{round(volume_ratio, 6)}")
     else:
         reasons.append("volume_ratio_unavailable")
+    if average_dollar_volume is not None:
+        reasons.append("average_dollar_volume_available")
+    else:
+        reasons.append("average_dollar_volume_unavailable")
+    if spread_bps is not None:
+        reasons.append("bid_ask_spread_available")
+    else:
+        reasons.append("bid_ask_spread_unavailable")
     if relative_strength_score is not None:
-        reasons.append(
-            "relative_strength_method:local_swing_range_proxy"
-        )
+        reasons.append("relative_strength_method:local_swing_range_proxy")
     else:
         reasons.append("relative_strength_unavailable")
     if validation_penalty_applied:
@@ -297,7 +330,21 @@ def build_technical_evidence(
             if relative_strength_score is not None
             else "unavailable"
         ),
-        "volume_ratio_source": "unavailable",
+        "volume_ratio_source": (
+            "liquidity_evidence"
+            if volume_ratio is not None
+            else "unavailable"
+        ),
+        "liquidity_evidence_version": liquidity_data.get(
+            "evidence_version"
+        ),
+        "liquidity_evidence_status": liquidity_data.get(
+            "evidence_status"
+        ),
+        "liquidity_historical_source": liquidity_provenance.get(
+            "historical_source"
+        ),
+        "liquidity_quote_source": liquidity_provenance.get("quote_source"),
         "validation_status": validation_status,
         "walk_forward_passed": walk_forward_passed,
         "validation_penalty_applied": validation_penalty_applied,
