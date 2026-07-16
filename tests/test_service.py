@@ -21,7 +21,8 @@ def _ohlcv_frame(rows=250):
             "Low": [value - 1.0 for value in close],
             "Close": close,
             "Volume": [1_000_000 + index for index in range(rows)],
-        }
+        },
+        index=pd.date_range("2025-01-01", periods=rows, freq="D"),
     )
 
 
@@ -97,3 +98,11 @@ def test_analyze_stock_success(mock_get_data):
     assert "indicators" in result["data"]
     assert result["data"]["indicators"]["swing_low"] is not None
     assert result["data"]["indicators"]["swing_high"] is not None
+
+    liquidity = result["data"]["liquidity_evidence"]
+    assert liquidity["evidence_version"] == "liquidity-evidence-v1"
+    assert liquidity["evidence_status"] == "partial"
+    assert liquidity["metrics"]["average_daily_volume"] > 1_000_000
+    assert liquidity["metrics"]["average_dollar_volume"] > 0
+    assert liquidity["metrics"]["volume_ratio"] > 0
+    assert "spread_bps" in liquidity["missing_fields"]
