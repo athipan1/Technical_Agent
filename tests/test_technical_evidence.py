@@ -107,3 +107,7 @@ def test_standard_data_does_not_manufacture_score_without_indicators():
         "technical_indicators_unavailable"
     ]
     assert data.technical_evidence.strategy_bucket_hint is None
+    assert data.profit_policy_context is not None
+    assert data.profit_policy_context.atr_pct is None
+    assert data.profit_policy_context.trend_strength is None
+    assert data.profit_policy_context.volume_strength is None

@@ -6,6 +6,11 @@
 1.  **Optimized Data Fetching**: ปรับลดระยะเวลาการดึงข้อมูลย้อนหลังเหลือ 2 ปี (จากเดิม 5 ปี) เพื่อเพิ่มความรวดเร็วในการประมวลผล โดยยังคงความแม่นยำสำหรับตัวชี้วัด SMA 200 วัน
 2.  **Dependency Stability**: ปรับปรุง `requirements.txt` โดยระบุเวอร์ชันของ Library ที่เสถียรและผ่านการทดสอบแล้ว เพื่อความง่ายในการติดตั้งและลดข้อผิดพลาดจาก Dependency Conflict
 3.  **Schema Alignment**: ปรับปรุงโครงสร้างข้อมูล (Schema) ในส่วนของผลลัพธ์ให้ตรงตามมาตรฐานที่ Orchestrator กำหนด (ใช้ `confidence_score` แทน `confidence`)
+
+ผลลัพธ์ `/analyze` มี `profit_policy_context` รุ่น
+`profit-technical-context.v1` ซึ่ง normalize ATR, trend strength, volume
+strength และเวลา OHLCV ล่าสุดจาก evidence เดิม โดยไม่สร้างค่าทดแทนเมื่อข้อมูล
+ขาดหาย Context นี้เป็น advisory input สำหรับ Manager_Agent เท่านั้น
 4.  **Unit Tests**: เพิ่มชุดทดสอบอัตโนมัติ (Automated Tests) ครอบคลุมตรรกะทางธุรกิจที่สำคัญ เพื่อความยั่งยืนในการพัฒนาต่อยอด
 
 ## การทำงานของโปรเจกต์

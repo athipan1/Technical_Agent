@@ -80,6 +80,33 @@ Bid, ask, and spread are included only when a valid quote snapshot is supplied. 
 
 See `docs/LIQUIDITY_EVIDENCE.md` for formulas, status semantics, and provenance.
 
+## Adaptive profit policy context
+
+`POST /analyze` also returns a normalized, non-binding
+`data.profit_policy_context`:
+
+```json
+{
+  "context_version": "profit-technical-context.v1",
+  "atr_pct": 0.025,
+  "trend_strength": 0.8,
+  "volume_strength": 0.8333,
+  "observed_at": "2026-07-22T00:00:00Z",
+  "evidence_status": "complete",
+  "source": "technical-agent"
+}
+```
+
+The projection reuses `technical-evidence-v1` and `liquidity-evidence-v1`:
+
+- ATR is normalized to a ratio.
+- trend strength is the existing normalized `trend_score`.
+- volume strength is `min(1, volume_ratio / 1.5)`.
+- observation time is the historical OHLCV `historical_as_of` value.
+
+Missing evidence remains `null`; the agent never substitutes a generated time
+or invented score. Manager_Agent owns synthesis and Profit/Risk safety priority.
+
 ## Safety Rules
 
 1. `Technical_Agent` only produces signals, evidence, and validation data.

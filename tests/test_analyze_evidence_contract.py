@@ -43,6 +43,7 @@ def test_analyze_response_exposes_versioned_technical_evidence(monkeypatch):
                         "volume_lookback_bars": 20,
                         "observed_bars": 20,
                         "timeframe": timeframe,
+                        "historical_as_of": "2026-07-22T00:00:00Z",
                     },
                 },
                 "indicators": {
@@ -93,6 +94,16 @@ def test_analyze_response_exposes_versioned_technical_evidence(monkeypatch):
     assert body["data"]["technical_score"] > 0.60
     assert body["data"]["raw_scores"]["trend_score"] == 0.80
     assert body["data"]["raw_scores"]["volume_ratio"] == 1.25
+    profit_context = body["data"]["profit_policy_context"]
+    assert profit_context == {
+        "context_version": "profit-technical-context.v1",
+        "atr_pct": 0.025,
+        "trend_strength": 0.8,
+        "volume_strength": 0.8333,
+        "observed_at": "2026-07-22T00:00:00Z",
+        "evidence_status": body["data"]["evidence_status"],
+        "source": "technical-agent",
+    }
 
     liquidity = body["data"]["liquidity_evidence"]
     assert liquidity["evidence_version"] == "liquidity-evidence-v1"
@@ -146,3 +157,7 @@ def test_analyze_error_response_reports_insufficient_evidence(monkeypatch):
     assert body["data"]["technical_evidence"]["evidence_reasons"] == [
         "technical_indicators_unavailable"
     ]
+    assert body["data"]["profit_policy_context"]["atr_pct"] is None
+    assert body["data"]["profit_policy_context"]["trend_strength"] is None
+    assert body["data"]["profit_policy_context"]["volume_strength"] is None
+    assert body["data"]["profit_policy_context"]["observed_at"] is None
