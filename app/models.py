@@ -70,6 +70,23 @@ class TechnicalEvidenceContract(BaseModel):
     manager_decision_required: bool = True
 
 
+class ProfitPolicyTechnicalContext(BaseModel):
+    """Versioned technical inputs for Manager-owned adaptive profit policy."""
+
+    context_version: str = "profit-technical-context.v1"
+    atr_pct: Optional[float] = Field(default=None, ge=0.0)
+    trend_strength: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    volume_strength: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    observed_at: Optional[datetime] = None
+    evidence_status: Literal[
+        "complete",
+        "partial",
+        "insufficient",
+        "unavailable",
+    ]
+    source: Literal["technical-agent"] = "technical-agent"
+
+
 class StandardAgentData(BaseModel):
     """Canonical technical-analysis result consumed by Manager_Agent."""
 
@@ -82,6 +99,7 @@ class StandardAgentData(BaseModel):
     technical_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     raw_scores: Dict[str, Any] = Field(default_factory=dict)
     technical_evidence: Optional[TechnicalEvidenceContract] = None
+    profit_policy_context: Optional[ProfitPolicyTechnicalContext] = None
     evidence_version: str = TECHNICAL_EVIDENCE_VERSION
     evidence_status: Literal[
         "complete",
@@ -153,6 +171,17 @@ class StandardAgentData(BaseModel):
 
         self.technical_evidence = TechnicalEvidenceContract.model_validate(
             evidence
+        )
+        try:
+            from .profit_policy_context import build_profit_policy_context
+        except ImportError:
+            from profit_policy_context import build_profit_policy_context
+
+        self.profit_policy_context = ProfitPolicyTechnicalContext.model_validate(
+            build_profit_policy_context(
+                technical_evidence=evidence,
+                liquidity_evidence=self.liquidity_evidence,
+            )
         )
         self.raw_scores = dict(evidence["raw_scores"])
         self.technical_score = evidence["raw_scores"].get(
