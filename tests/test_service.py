@@ -14,6 +14,7 @@ from service import analyze_stock, calculate_indicators, generate_signal  # noqa
 
 def _ohlcv_frame(rows=250):
     close = [float(100 + index) for index in range(rows)]
+    end = pd.Timestamp.now(tz="UTC").tz_localize(None)
     return pd.DataFrame(
         {
             "Open": [value - 0.5 for value in close],
@@ -22,7 +23,7 @@ def _ohlcv_frame(rows=250):
             "Close": close,
             "Volume": [1_000_000 + index for index in range(rows)],
         },
-        index=pd.date_range("2025-01-01", periods=rows, freq="D"),
+        index=pd.date_range(end=end, periods=rows, freq="D"),
     )
 
 
@@ -95,6 +96,8 @@ def test_analyze_stock_success(mock_get_data):
 
     assert result["status"] == "success"
     assert result["data"]["confidence_score"] == 0.5
+    assert result["data"]["data_quality"]["status"] == "complete"
+    assert result["data"]["data_quality"]["fresh"] is True
     assert "indicators" in result["data"]
     assert result["data"]["indicators"]["swing_low"] is not None
     assert result["data"]["indicators"]["swing_high"] is not None
@@ -106,3 +109,18 @@ def test_analyze_stock_success(mock_get_data):
     assert liquidity["metrics"]["average_dollar_volume"] > 0
     assert liquidity["metrics"]["volume_ratio"] > 0
     assert "spread_bps" in liquidity["missing_fields"]
+
+
+@patch("service.get_stock_data")
+def test_analyze_stock_insufficient_history_fails_closed(mock_get_data):
+    mock_get_data.return_value = _ohlcv_frame(rows=50)
+
+    result = analyze_stock("AAPL")
+
+    assert result["status"] == "error"
+    assert result["data"]["action"] == "hold"
+    assert result["data"]["confidence_score"] == 0.0
+    assert result["data"]["reason"] == "insufficient_technical_data"
+    assert result["data"]["data_quality"]["status"] == "insufficient"
+    assert result["error"]["code"] == "INSUFFICIENT_TECHNICAL_DATA"
+    assert "indicators" not in result["data"]
