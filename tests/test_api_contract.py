@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.main import app
-from app.models import StandardAgentResponse
+from app.models import AnalyzeRequest, StandardAgentResponse
 
 
 REQUIRED_STANDARD_RESPONSE_FIELDS = {
@@ -23,7 +23,7 @@ REQUIRED_STANDARD_RESPONSE_FIELDS = {
 def assert_standard_response(payload):
     assert REQUIRED_STANDARD_RESPONSE_FIELDS.issubset(payload.keys())
     assert payload["agent_type"] == "technical"
-    assert payload["version"] == "1.5.0"
+    assert payload["version"] == "1.6.0"
     assert payload["schema_version"] == "1.0"
 
 
@@ -33,7 +33,7 @@ def test_standard_response_has_contract_defaults():
 
     assert REQUIRED_STANDARD_RESPONSE_FIELDS.issubset(payload.keys())
     assert payload["agent_type"] == "technical"
-    assert payload["version"] == "1.5.0"
+    assert payload["version"] == "1.6.0"
     assert payload["schema_version"] == "1.0"
     assert payload["correlation_id"] is None
     assert payload["metadata"] == {}
@@ -43,6 +43,45 @@ def test_standard_response_has_contract_defaults():
 def test_standard_response_rejects_invalid_schema_version():
     with pytest.raises(ValidationError):
         StandardAgentResponse(status="success", schema_version="v1", data={})
+
+
+def test_analyze_request_normalizes_ticker_and_accepts_manager_compatibility():
+    request = AnalyzeRequest(
+        ticker=" aapl ",
+        timeframe="1h",
+        period="1mo",
+        account_id="paper-account",
+    )
+
+    assert request.ticker == "AAPL"
+    assert request.timeframe == "1h"
+    assert request.period == "1mo"
+    assert request.account_id == "paper-account"
+
+
+def test_analyze_request_rejects_unsupported_timeframe():
+    with pytest.raises(ValidationError):
+        AnalyzeRequest(ticker="AAPL", timeframe="2h")
+
+
+def test_analyze_request_rejects_invalid_ticker_characters():
+    with pytest.raises(ValidationError):
+        AnalyzeRequest(ticker="AAPL;DROP", timeframe="1d")
+
+
+def test_analyze_request_rejects_unknown_fields():
+    with pytest.raises(ValidationError):
+        AnalyzeRequest(ticker="AAPL", timeframe="1d", mystery=True)
+
+
+def test_invalid_timeframe_returns_422_before_analysis():
+    client = TestClient(app)
+    response = client.post(
+        "/analyze",
+        json={"ticker": "AAPL", "timeframe": "2h"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_version_endpoint_uses_standard_contract():
@@ -56,6 +95,9 @@ def test_version_endpoint_uses_standard_contract():
         "multi-agent-trading-api-contract"
     )
     assert payload["data"]["schema_version"] == "1.0"
+    assert payload["data"]["analyze_request_contract"] == (
+        "technical-analyze.v2"
+    )
     assert payload["data"]["evidence_version"] == "technical-evidence-v1"
     assert payload["data"]["liquidity_evidence_version"] == (
         "liquidity-evidence-v1"
@@ -71,6 +113,13 @@ def test_ready_endpoint_uses_standard_contract():
     payload = response.json()
     assert_standard_response(payload)
     assert payload["data"]["ready"] is True
+    assert payload["data"]["supported_timeframes"] == [
+        "1d",
+        "1h",
+        "30m",
+        "15m",
+    ]
+    assert payload["data"]["data_quality_gate"] == "fail-closed"
     assert payload["data"]["evidence_version"] == "technical-evidence-v1"
     assert payload["data"]["liquidity_evidence_version"] == (
         "liquidity-evidence-v1"
@@ -89,6 +138,7 @@ def test_health_endpoint_uses_standard_contract():
     payload = response.json()
     assert_standard_response(payload)
     assert payload["data"]["status"] == "ok"
+    assert payload["data"]["data_quality_gate"] == "fail-closed"
     assert payload["data"]["evidence_version"] == "technical-evidence-v1"
     assert payload["data"]["liquidity_evidence_version"] == (
         "liquidity-evidence-v1"

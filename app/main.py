@@ -11,6 +11,7 @@ try:
         SCHEMA_VERSION,
         StandardAgentData,
         StandardAgentResponse,
+        SUPPORTED_TIMEFRAMES,
         TECHNICAL_AGENT_TYPE,
         TECHNICAL_AGENT_VERSION,
         TECHNICAL_EVIDENCE_VERSION,
@@ -26,6 +27,7 @@ except ImportError:
         SCHEMA_VERSION,
         StandardAgentData,
         StandardAgentResponse,
+        SUPPORTED_TIMEFRAMES,
         TECHNICAL_AGENT_TYPE,
         TECHNICAL_AGENT_VERSION,
         TECHNICAL_EVIDENCE_VERSION,
@@ -78,6 +80,7 @@ def version_check():
             "version": TECHNICAL_AGENT_VERSION,
             "schema_version": SCHEMA_VERSION,
             "api_contract": "multi-agent-trading-api-contract",
+            "analyze_request_contract": "technical-analyze.v2",
             "evidence_version": TECHNICAL_EVIDENCE_VERSION,
             "liquidity_evidence_version": LIQUIDITY_EVIDENCE_VERSION,
         },
@@ -106,9 +109,11 @@ def readiness_check():
             "analysis_endpoint": "/analyze",
             "walk_forward_endpoint": "/validate/walk-forward",
             "supported_actions": ["buy", "sell", "hold"],
+            "supported_timeframes": list(SUPPORTED_TIMEFRAMES),
             "confidence_cap": 0.80,
             "evidence_version": TECHNICAL_EVIDENCE_VERSION,
             "liquidity_evidence_version": LIQUIDITY_EVIDENCE_VERSION,
+            "data_quality_gate": "fail-closed",
             "bucket_decision_authority": "manager",
             "manager_decision_required": True,
         },
@@ -141,11 +146,17 @@ def analyze_ticker_endpoint(
         reason=raw_data["reason"],
         current_price=raw_data.get("current_price"),
         indicators=raw_data.get("indicators"),
+        data_quality=raw_data.get("data_quality"),
         liquidity_evidence=raw_data.get("liquidity_evidence"),
     )
     liquidity_status = (
         analysis_data.liquidity_evidence.evidence_status
         if analysis_data.liquidity_evidence
+        else "unavailable"
+    )
+    data_quality_status = (
+        analysis_data.data_quality.status
+        if analysis_data.data_quality
         else "unavailable"
     )
     return build_response(
@@ -155,6 +166,10 @@ def analyze_ticker_endpoint(
         correlation_id=x_correlation_id,
         confidence_score=raw_data.get("confidence_score"),
         metadata={
+            "analyze_request_contract": "technical-analyze.v2",
+            "requested_timeframe": request.timeframe,
+            "deprecated_period_ignored": request.period is not None,
+            "data_quality_status": data_quality_status,
             "evidence_version": TECHNICAL_EVIDENCE_VERSION,
             "liquidity_evidence_version": LIQUIDITY_EVIDENCE_VERSION,
             "liquidity_evidence_status": liquidity_status,
@@ -224,6 +239,7 @@ def health_check():
             "walk_forward_endpoint": "/validate/walk-forward",
             "evidence_version": TECHNICAL_EVIDENCE_VERSION,
             "liquidity_evidence_version": LIQUIDITY_EVIDENCE_VERSION,
+            "data_quality_gate": "fail-closed",
             "bucket_decision_authority": "manager",
         },
     )

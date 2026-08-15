@@ -72,15 +72,26 @@ def test_analyze_response_exposes_versioned_technical_evidence(monkeypatch):
 
     response = client.post(
         "/analyze",
-        json={"ticker": "TEST", "timeframe": "1d"},
+        json={
+            "ticker": "TEST",
+            "timeframe": "1d",
+            "period": "1mo",
+            "account_id": "paper-account",
+        },
         headers={"X-Correlation-ID": "technical-evidence-test"},
     )
     body = response.json()
 
     assert response.status_code == 200
     assert body["status"] == "success"
-    assert body["version"] == "1.5.0"
+    assert body["version"] == "1.6.0"
     assert body["correlation_id"] == "technical-evidence-test"
+    assert body["metadata"]["analyze_request_contract"] == (
+        "technical-analyze.v2"
+    )
+    assert body["metadata"]["requested_timeframe"] == "1d"
+    assert body["metadata"]["deprecated_period_ignored"] is True
+    assert body["metadata"]["data_quality_status"] == "unavailable"
     assert body["metadata"]["evidence_version"] == "technical-evidence-v1"
     assert body["metadata"]["liquidity_evidence_version"] == (
         "liquidity-evidence-v1"
@@ -149,6 +160,7 @@ def test_analyze_error_response_reports_insufficient_evidence(monkeypatch):
 
     assert response.status_code == 200
     assert body["status"] == "error"
+    assert body["metadata"]["data_quality_status"] == "unavailable"
     assert body["metadata"]["liquidity_evidence_status"] == "unavailable"
     assert body["data"]["evidence_status"] == "insufficient"
     assert body["data"]["technical_score"] is None

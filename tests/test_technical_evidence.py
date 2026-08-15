@@ -25,6 +25,21 @@ def _indicators(**overrides):
     return data
 
 
+def _data_quality(status="complete", completeness_score=1.0):
+    return {
+        "status": status,
+        "completeness_score": completeness_score,
+        "timeframe": "1d",
+        "bars_available": 250,
+        "minimum_bars_required": 200,
+        "latest_observed_at": "2026-08-15T00:00:00Z",
+        "fresh": True,
+        "freshness_max_age_seconds": 432000,
+        "missing_fields": [] if status == "complete" else ["Volume"],
+        "reasons": [f"test_quality:{status}"],
+    }
+
+
 def test_build_technical_evidence_is_versioned_and_non_binding():
     evidence = build_technical_evidence(
         action="buy",
@@ -111,3 +126,20 @@ def test_standard_data_does_not_manufacture_score_without_indicators():
     assert data.profit_policy_context.atr_pct is None
     assert data.profit_policy_context.trend_strength is None
     assert data.profit_policy_context.volume_strength is None
+
+
+def test_partial_data_quality_degrades_complete_evidence_to_partial():
+    data = StandardAgentData(
+        action=Action.BUY,
+        confidence_score=0.75,
+        reason="quality-aware signal",
+        current_price=108.0,
+        indicators=_indicators(),
+        data_quality=_data_quality("partial", 0.9),
+    )
+
+    assert data.evidence_status == "partial"
+    assert data.evidence_completeness_score == 0.9
+    assert data.technical_evidence is not None
+    assert data.technical_evidence.provenance["data_quality_status"] == "partial"
+    assert "data_quality_gate:partial" in data.technical_evidence.evidence_reasons
