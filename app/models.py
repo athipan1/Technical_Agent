@@ -1,16 +1,18 @@
+import re
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar
+from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 T = TypeVar("T")
 
 TECHNICAL_AGENT_TYPE = "technical"
-TECHNICAL_AGENT_VERSION = "1.5.0"
+TECHNICAL_AGENT_VERSION = "1.6.0"
 TECHNICAL_EVIDENCE_VERSION = "technical-evidence-v1"
 LIQUIDITY_EVIDENCE_VERSION = "liquidity-evidence-v1"
 SCHEMA_VERSION = "1.0"
+SUPPORTED_TIMEFRAMES = ("1d", "1h", "30m", "15m")
 
 
 class Action(str, Enum):
@@ -40,6 +42,21 @@ class Indicators(BaseModel):
     raw_confidence_score: Optional[float] = None
     validation_status: Optional[str] = None
     walk_forward_passed: Optional[bool] = None
+
+
+class DataQualityReport(BaseModel):
+    """Fail-closed quality assessment for market data and indicators."""
+
+    status: Literal["complete", "partial", "insufficient"]
+    completeness_score: float = Field(ge=0.0, le=1.0)
+    timeframe: Optional[str] = None
+    bars_available: int = Field(ge=0)
+    minimum_bars_required: int = Field(ge=1)
+    latest_observed_at: Optional[datetime] = None
+    fresh: Optional[bool] = None
+    freshness_max_age_seconds: Optional[int] = Field(default=None, ge=0)
+    missing_fields: List[str] = Field(default_factory=list)
+    reasons: List[str] = Field(default_factory=list)
 
 
 class LiquidityEvidenceContract(BaseModel):
@@ -95,6 +112,7 @@ class StandardAgentData(BaseModel):
     reason: str
     current_price: Optional[float] = None
     indicators: Optional[Indicators] = None
+    data_quality: Optional[DataQualityReport] = None
     liquidity_evidence: Optional[LiquidityEvidenceContract] = None
     technical_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     raw_scores: Dict[str, Any] = Field(default_factory=dict)
@@ -169,6 +187,30 @@ class StandardAgentData(BaseModel):
                 liquidity_evidence=self.liquidity_evidence,
             )
 
+        if self.data_quality is not None:
+            quality_status = self.data_quality.status
+            evidence["provenance"]["data_quality_status"] = quality_status
+            evidence["provenance"]["data_quality_completeness_score"] = (
+                self.data_quality.completeness_score
+            )
+            if quality_status == "insufficient":
+                evidence["evidence_status"] = "insufficient"
+                evidence["evidence_reasons"].append(
+                    "data_quality_gate:insufficient"
+                )
+            elif (
+                quality_status == "partial"
+                and evidence["evidence_status"] == "complete"
+            ):
+                evidence["evidence_status"] = "partial"
+                evidence["evidence_reasons"].append(
+                    "data_quality_gate:partial"
+                )
+            evidence["evidence_completeness_score"] = min(
+                float(evidence["evidence_completeness_score"]),
+                self.data_quality.completeness_score,
+            )
+
         self.technical_evidence = TechnicalEvidenceContract.model_validate(
             evidence
         )
@@ -223,26 +265,64 @@ class StandardAgentResponse(BaseModel, Generic[T]):
 
 
 class AnalyzeRequest(BaseModel):
-    """Defines the structure for the incoming request body."""
+    """Strict request contract with compatibility fields for Manager_Agent."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     ticker: str = Field(
         ...,
+        min_length=1,
+        max_length=32,
         description="The stock ticker symbol to be analyzed.",
         examples=["AOT.BK"],
     )
-    timeframe: str = Field(
+    timeframe: Literal["1d", "1h", "30m", "15m"] = Field(
         "1d",
-        description="Candle timeframe such as 1d, 1h, 30m, or 15m.",
+        description="Candle timeframe. Unsupported values are rejected.",
         examples=["1d"],
     )
+    period: Optional[str] = Field(
+        default=None,
+        exclude=True,
+        description=(
+            "Deprecated Manager_Agent compatibility field. It does not alter "
+            "the candle timeframe."
+        ),
+    )
+    account_id: Optional[Union[int, str]] = Field(
+        default=None,
+        exclude=True,
+        description="Compatibility field accepted from Manager_Agent.",
+    )
+
+    @field_validator("ticker")
+    @classmethod
+    def normalize_and_validate_ticker(cls, value: str) -> str:
+        ticker = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9^][A-Z0-9.^=_-]{0,31}", ticker):
+            raise ValueError("ticker contains unsupported characters")
+        return ticker
 
 
 class WalkForwardRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
     ticker: str = Field(..., examples=["AAPL"])
-    timeframe: str = Field("1d", examples=["1d"])
+    timeframe: Literal["1d", "1h", "30m", "15m"] = Field(
+        "1d",
+        examples=["1d"],
+    )
     min_train_bars: int = Field(180, ge=60)
     test_bars: int = Field(30, ge=5)
     step_bars: int = Field(30, ge=5)
+
+    @field_validator("ticker")
+    @classmethod
+    def normalize_walk_forward_ticker(cls, value: str) -> str:
+        ticker = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9^][A-Z0-9.^=_-]{0,31}", ticker):
+            raise ValueError("ticker contains unsupported characters")
+        return ticker
 
 
 class WalkForwardWindow(BaseModel):
