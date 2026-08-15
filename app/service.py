@@ -13,8 +13,10 @@ import pandas_ta as ta
 from risk_controls import calculate_atr, calculate_stop_levels
 
 try:
+    from .data_quality import assess_data_quality
     from .liquidity_evidence import build_liquidity_evidence
 except ImportError:
+    from data_quality import assess_data_quality
     from liquidity_evidence import build_liquidity_evidence
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -71,7 +73,12 @@ def cap_confidence(raw_confidence: float) -> float:
 
 def _normalise_timeframe(timeframe: str | None) -> str:
     value = str(timeframe or "1d").strip().lower()
-    return value if value in TIMEFRAME_CONFIG else "1d"
+    if value not in TIMEFRAME_CONFIG:
+        supported = ", ".join(TIMEFRAME_CONFIG)
+        raise AnalysisError(
+            f"Unsupported timeframe '{value}'. Supported values: {supported}."
+        )
+    return value
 
 
 def _normalize_ohlcv_columns(data: pd.DataFrame) -> pd.DataFrame:
@@ -199,31 +206,62 @@ def get_stock_data(ticker: str, timeframe: str = "1d") -> pd.DataFrame:
     return data
 
 
+def _manual_rsi(close: pd.Series, length: int = 14) -> pd.Series:
+    delta = close.astype(float).diff()
+    gain = delta.clip(lower=0.0)
+    loss = -delta.clip(upper=0.0)
+    avg_gain = gain.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
+    safe_loss = avg_loss.mask(avg_loss == 0.0)
+    rs = avg_gain / safe_loss
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    rsi = rsi.mask((avg_loss == 0.0) & (avg_gain > 0.0), 100.0)
+    rsi = rsi.mask((avg_loss == 0.0) & (avg_gain == 0.0), 50.0)
+    return rsi
+
+
+def _manual_macd(close: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
+    values = close.astype(float)
+    fast = values.ewm(span=12, adjust=False, min_periods=12).mean()
+    slow = values.ewm(span=26, adjust=False, min_periods=26).mean()
+    macd_line = fast - slow
+    macd_signal = macd_line.ewm(span=9, adjust=False, min_periods=9).mean()
+    histogram = macd_line - macd_signal
+    return macd_line, histogram, macd_signal
+
+
 def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
     data = data.copy()
     try:
         data.ta.sma(length=200, append=True)
     except Exception as exc:
         logging.warning(
-            "SMA calculation failed: %s. Defaulting to rolling mean.",
+            "SMA calculation failed: %s. Using deterministic rolling SMA.",
             exc,
         )
         data["SMA_200"] = data["Close"].rolling(
-            window=min(200, len(data)),
-            min_periods=1,
+            window=200,
+            min_periods=200,
         ).mean()
     try:
         data.ta.rsi(length=14, append=True)
     except Exception as exc:
-        logging.warning("RSI calculation failed: %s. Defaulting to 50.", exc)
-        data["RSI_14"] = 50.0
+        logging.warning(
+            "RSI calculation failed: %s. Using deterministic RSI fallback.",
+            exc,
+        )
+        data["RSI_14"] = _manual_rsi(data["Close"], length=14)
     try:
         data.ta.macd(fast=12, slow=26, signal=9, append=True)
     except Exception as exc:
-        logging.warning("MACD calculation failed: %s. Defaulting to 0.", exc)
-        data["MACD_12_26_9"] = 0.0
-        data["MACDh_12_26_9"] = 0.0
-        data["MACDs_12_26_9"] = 0.0
+        logging.warning(
+            "MACD calculation failed: %s. Using deterministic EMA fallback.",
+            exc,
+        )
+        macd_line, histogram, macd_signal = _manual_macd(data["Close"])
+        data["MACD_12_26_9"] = macd_line
+        data["MACDh_12_26_9"] = histogram
+        data["MACDs_12_26_9"] = macd_signal
     try:
         atr = ta.atr(
             high=data["High"],
@@ -234,30 +272,11 @@ def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
         data["ATR_14"] = atr
     except Exception as exc:
         logging.warning(
-            "ATR calculation failed: %s. Defaulting to manual ATR.",
+            "ATR calculation failed: %s. Using deterministic ATR fallback.",
             exc,
         )
         data["ATR_14"] = calculate_atr(data, length=14)
     return data
-
-
-def check_data_quality(data: pd.DataFrame, ticker: str):
-    latest_data = data.iloc[-1]
-    required_columns = [
-        "Close",
-        "High",
-        "Low",
-        "SMA_200",
-        "RSI_14",
-        "MACD_12_26_9",
-        "MACDs_12_26_9",
-        "ATR_14",
-    ]
-    for col in required_columns:
-        if col not in latest_data or pd.isna(latest_data[col]):
-            raise AnalysisError(
-                f"Not enough data for '{ticker}'. Missing or NaN value for {col}."
-            )
 
 
 def generate_signal(latest_data: pd.Series) -> tuple[str, float, str]:
@@ -420,21 +439,46 @@ def analyze_stock(
     timeframe: str = "1d",
     correlation_id: str = None,
 ) -> dict:
-    timeframe = _normalise_timeframe(timeframe)
-    logging.info(
-        "Analysis started for ticker: '%s', timeframe: '%s', correlation_id: '%s'",
-        ticker,
-        timeframe,
-        correlation_id,
-    )
     try:
+        timeframe = _normalise_timeframe(timeframe)
+        logging.info(
+            "Analysis started for ticker: '%s', timeframe: '%s', correlation_id: '%s'",
+            ticker,
+            timeframe,
+            correlation_id,
+        )
         data = get_stock_data(ticker, timeframe)
         liquidity_evidence = build_liquidity_evidence(
             data,
             timeframe=timeframe,
         )
         data_with_indicators = calculate_indicators(data)
-        check_data_quality(data_with_indicators, ticker)
+        data_quality = assess_data_quality(
+            data_with_indicators,
+            timeframe=timeframe,
+        )
+        if data_quality["status"] == "insufficient":
+            return {
+                "status": "error",
+                "data": {
+                    "action": "hold",
+                    "confidence_score": 0.0,
+                    "reason": "insufficient_technical_data",
+                    "current_price": (
+                        round(float(data["Close"].iloc[-1]), 2)
+                        if not data.empty and "Close" in data.columns
+                        else None
+                    ),
+                    "data_quality": data_quality,
+                    "liquidity_evidence": liquidity_evidence,
+                },
+                "error": {
+                    "code": "INSUFFICIENT_TECHNICAL_DATA",
+                    "message": "; ".join(data_quality["reasons"]),
+                    "retryable": True,
+                },
+            }
+
         latest_data = data_with_indicators.iloc[-1]
         action, raw_confidence, trend = generate_signal(latest_data)
         confidence = cap_confidence(raw_confidence)
@@ -449,9 +493,11 @@ def analyze_stock(
                     f"Signal '{action}' generated. Trend: {trend}, "
                     f"RSI: {rsi_val}, volatility: "
                     f"{stop_levels['volatility_regime']}. "
+                    f"Data quality: {data_quality['status']}. "
                     f"Confidence capped at {MAX_CONFIDENCE}."
                 ),
                 "current_price": round(float(latest_data["Close"]), 2),
+                "data_quality": data_quality,
                 "liquidity_evidence": liquidity_evidence,
                 "indicators": {
                     "trend": trend,
@@ -565,7 +611,11 @@ def main():
     try:
         analysis_result = analyze_stock(ticker_arg, timeframe=timeframe_arg)
         data = analysis_result["data"]
-        if data["reason"] in ["ticker_not_found", "analysis_error"]:
+        if data["reason"] in [
+            "ticker_not_found",
+            "analysis_error",
+            "insufficient_technical_data",
+        ]:
             print(json.dumps({"error": data["reason"]}), file=sys.stderr)
             sys.exit(1)
         indicators = data["indicators"]
@@ -581,10 +631,11 @@ def main():
             "signal": data["action"],
             "confidence_score": data["confidence_score"],
             "confidence_cap": indicators.get("confidence_cap"),
+            "data_quality": data.get("data_quality"),
             "liquidity_evidence": data.get("liquidity_evidence"),
             "reasoning": data["reason"],
         }
-        print(json.dumps(cli_output, indent=4))
+        print(json.dumps(cli_output, indent=4, default=str))
     except Exception as exc:
         logging.exception("CLI execution failed")
         print(json.dumps({"error": str(exc)}), file=sys.stderr)
