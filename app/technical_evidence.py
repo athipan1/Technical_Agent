@@ -3,7 +3,10 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Mapping, Optional
 
-from .candidate_scorecard import build_technical_candidate_scorecard
+try:
+    from .candidate_scorecard import build_technical_candidate_scorecard
+except ImportError:
+    from candidate_scorecard import build_technical_candidate_scorecard
 
 
 TECHNICAL_EVIDENCE_VERSION = "technical-evidence-v1"
