@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Mapping, Optional
 
+from .candidate_scorecard import build_technical_candidate_scorecard
+
 
 TECHNICAL_EVIDENCE_VERSION = "technical-evidence-v1"
 BUCKET_DECISION_AUTHORITY = "manager"
@@ -293,6 +295,24 @@ def build_technical_evidence(
     )
     status = _evidence_status(completeness)
 
+    relative_strength_method = (
+        "local_swing_range_proxy"
+        if relative_strength_score is not None
+        else "unavailable"
+    )
+    candidate_scorecard = build_technical_candidate_scorecard(
+        trend=trend,
+        volume_ratio=volume_ratio,
+        relative_strength_method=relative_strength_method,
+        evidence_status=status,
+    )
+    raw_scores["candidate_technical_points"] = candidate_scorecard[
+        "points"
+    ]
+    raw_scores["candidate_technical_max_points"] = candidate_scorecard[
+        "max_points"
+    ]
+
     reasons = [
         f"evidence_status:{status}",
         f"available_fields:{len(available_fields)}",
@@ -325,11 +345,7 @@ def build_technical_evidence(
     provenance = {
         "evidence_source": "technical_agent_indicators",
         "timeframe": timeframe,
-        "relative_strength_method": (
-            "local_swing_range_proxy"
-            if relative_strength_score is not None
-            else "unavailable"
-        ),
+        "relative_strength_method": relative_strength_method,
         "volume_ratio_source": (
             "liquidity_evidence"
             if volume_ratio is not None
@@ -351,6 +367,7 @@ def build_technical_evidence(
         "confidence_cap": indicator_data.get("confidence_cap"),
         "raw_confidence_score": raw_confidence,
         "capped_confidence_score": capped_confidence,
+        "candidate_scorecard": candidate_scorecard,
     }
 
     return {
