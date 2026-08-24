@@ -9,6 +9,7 @@ import pandas as pd
 
 LIQUIDITY_EVIDENCE_VERSION = "liquidity-evidence-v1"
 DEFAULT_LOOKBACK_BARS = 20
+_LONG_TREND_TIMEFRAME = "1d"
 
 
 def _finite_float(value: Any) -> Optional[float]:
@@ -86,6 +87,98 @@ def _liquidity_window(
     return prepared.tail(lookback), "per_bar_fallback_no_datetime_index"
 
 
+def _long_trend_metrics(valid: pd.DataFrame, *, timeframe: str) -> Dict[str, Any]:
+    """Derive daily long-trend evidence from OHLCV already fetched by Technical.
+
+    No provider call is made here. SMA50/SMA200 and 20d/60d returns are emitted
+    only for the daily timeframe so an intraday moving average cannot accidentally
+    masquerade as the long-horizon evidence consumed by Manager_Agent.
+    """
+
+    normalized_timeframe = str(timeframe or "1d").strip().lower()
+    if normalized_timeframe != _LONG_TREND_TIMEFRAME or valid.empty:
+        return {
+            "status": "unavailable",
+            "timeframe": normalized_timeframe,
+            "method": "daily_ohlcv_rolling_close",
+            "metrics": {},
+            "available_fields": [],
+            "missing_fields": [
+                "sma50",
+                "sma200",
+                "price_above_sma200",
+                "sma50_above_sma200",
+                "return_20d",
+                "return_60d",
+            ],
+        }
+
+    close = pd.to_numeric(valid["close"], errors="coerce").dropna()
+    metrics: Dict[str, Any] = {}
+    latest = _positive_float(close.iloc[-1]) if not close.empty else None
+
+    sma50 = (
+        _finite_float(close.tail(50).mean())
+        if len(close) >= 50
+        else None
+    )
+    sma200 = (
+        _finite_float(close.tail(200).mean())
+        if len(close) >= 200
+        else None
+    )
+    return_20d = (
+        _finite_float((latest / float(close.iloc[-21])) - 1.0)
+        if latest is not None and len(close) >= 21 and float(close.iloc[-21]) > 0
+        else None
+    )
+    return_60d = (
+        _finite_float((latest / float(close.iloc[-61])) - 1.0)
+        if latest is not None and len(close) >= 61 and float(close.iloc[-61]) > 0
+        else None
+    )
+
+    if sma50 is not None:
+        metrics["sma50"] = round(sma50, 6)
+    if sma200 is not None:
+        metrics["sma200"] = round(sma200, 6)
+    if latest is not None and sma200 is not None:
+        metrics["price_above_sma200"] = bool(latest > sma200)
+    if sma50 is not None and sma200 is not None:
+        metrics["sma50_above_sma200"] = bool(sma50 > sma200)
+    if return_20d is not None:
+        metrics["return_20d"] = round(return_20d, 8)
+    if return_60d is not None:
+        metrics["return_60d"] = round(return_60d, 8)
+
+    expected = {
+        "sma50",
+        "sma200",
+        "price_above_sma200",
+        "sma50_above_sma200",
+        "return_20d",
+        "return_60d",
+    }
+    available = sorted(set(metrics) & expected)
+    missing = sorted(expected - set(available))
+    if not missing:
+        status = "complete"
+    elif available:
+        status = "partial"
+    else:
+        status = "unavailable"
+
+    return {
+        "status": status,
+        "timeframe": normalized_timeframe,
+        "method": "daily_ohlcv_rolling_close",
+        "metrics": metrics,
+        "available_fields": available,
+        "missing_fields": missing,
+        "observed_bars": int(len(close)),
+    }
+
+
 def build_liquidity_evidence(
     data: pd.DataFrame,
     *,
@@ -94,12 +187,7 @@ def build_liquidity_evidence(
     lookback_bars: int = DEFAULT_LOOKBACK_BARS,
     source: str = "historical_ohlcv",
 ) -> Dict[str, Any]:
-    """Build non-binding liquidity evidence without inventing missing quotes.
-
-    Historical OHLCV provides average daily volume and average daily dollar
-    volume. Intraday bars are aggregated by UTC session date before averaging.
-    Bid/ask spread is included only when a caller supplies a valid quote.
-    """
+    """Build liquidity plus non-binding long-trend evidence from one OHLCV fetch."""
 
     frame = data.copy() if isinstance(data, pd.DataFrame) else pd.DataFrame()
     requested_lookback = max(1, int(lookback_bars or DEFAULT_LOOKBACK_BARS))
@@ -130,6 +218,7 @@ def build_liquidity_evidence(
         timeframe=timeframe,
         lookback=requested_lookback,
     )
+    long_trend = _long_trend_metrics(valid, timeframe=timeframe)
 
     latest_volume = None
     average_price = None
@@ -141,9 +230,7 @@ def build_liquidity_evidence(
         latest_volume = _finite_float(window["volume"].iloc[-1])
         average_price = _positive_float(window["close"].mean())
         average_daily_volume = _finite_float(window["volume"].mean())
-        average_dollar_volume = _finite_float(
-            window["dollar_volume"].mean()
-        )
+        average_dollar_volume = _finite_float(window["dollar_volume"].mean())
         if (
             latest_volume is not None
             and average_daily_volume is not None
@@ -178,6 +265,7 @@ def build_liquidity_evidence(
         "bid": bid,
         "ask": ask,
         "spread_bps": spread_bps,
+        **dict(long_trend.get("metrics") or {}),
     }
     metrics = {
         key: round(value, 6) if isinstance(value, float) else value
@@ -208,6 +296,12 @@ def build_liquidity_evidence(
         reasons.append("bid_ask_spread_unavailable")
     else:
         reasons.append("bid_ask_spread_from_quote_snapshot")
+    if long_trend.get("status") == "complete":
+        reasons.append("daily_long_trend_evidence_complete")
+    elif long_trend.get("status") == "partial":
+        reasons.append("daily_long_trend_evidence_partial")
+    else:
+        reasons.append("daily_long_trend_evidence_unavailable")
 
     historical_complete = all(field in metrics for field in historical_fields)
     quote_complete = all(field in metrics for field in quote_fields)
@@ -237,6 +331,14 @@ def build_liquidity_evidence(
         "historical_as_of": historical_as_of,
         "quote_as_of": quote_as_of,
         "generated_at": generated_at,
+        "long_trend_context": {
+            "status": long_trend.get("status"),
+            "timeframe": long_trend.get("timeframe"),
+            "method": long_trend.get("method"),
+            "observed_bars": long_trend.get("observed_bars", 0),
+            "available_fields": long_trend.get("available_fields") or [],
+            "missing_fields": long_trend.get("missing_fields") or [],
+        },
     }
 
     completeness = round(
