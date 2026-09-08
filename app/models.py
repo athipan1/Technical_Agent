@@ -108,6 +108,7 @@ class StandardAgentData(BaseModel):
     """Canonical technical-analysis result consumed by Manager_Agent."""
 
     action: Action
+    decision_trace: Dict[str, Any] = Field(default_factory=dict)
     confidence_score: float = Field(..., ge=0.0, le=1.0)
     reason: str
     current_price: Optional[float] = None

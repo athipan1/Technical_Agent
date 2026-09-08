@@ -13,9 +13,11 @@ import pandas_ta as ta
 from risk_controls import calculate_atr, calculate_stop_levels
 
 try:
+    from .signal_decision import evaluate_signal
     from .data_quality import assess_data_quality
     from .liquidity_evidence import build_liquidity_evidence
 except ImportError:
+    from signal_decision import evaluate_signal
     from data_quality import assess_data_quality
     from liquidity_evidence import build_liquidity_evidence
 
@@ -280,24 +282,8 @@ def calculate_indicators(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def generate_signal(latest_data: pd.Series) -> tuple[str, float, str]:
-    price = latest_data["Close"]
-    sma200 = latest_data["SMA_200"]
-    rsi = latest_data["RSI_14"]
-    macd_line = latest_data["MACD_12_26_9"]
-    macd_signal = latest_data["MACDs_12_26_9"]
-    if price > sma200:
-        trend = "Uptrend"
-    elif price < sma200:
-        trend = "Downtrend"
-    else:
-        trend = "Sideways"
-    action = "hold"
-    if trend == "Uptrend" and rsi < 30 and macd_line > macd_signal:
-        action = "buy"
-    elif trend == "Downtrend" and rsi > 70 and macd_line < macd_signal:
-        action = "sell"
-    raw_confidence = 0.75 if action in ["buy", "sell"] else 0.5
-    return action, raw_confidence, trend
+    trace = evaluate_signal(latest_data)
+    return trace["action"], trace["raw_confidence"], trace["trend"]
 
 
 def _safe_sharpe(returns: list[float]) -> float:
@@ -480,6 +466,7 @@ def analyze_stock(
             }
 
         latest_data = data_with_indicators.iloc[-1]
+        decision_trace = evaluate_signal(latest_data)
         action, raw_confidence, trend = generate_signal(latest_data)
         confidence = cap_confidence(raw_confidence)
         rsi_val = round(float(latest_data["RSI_14"]), 2)
@@ -488,6 +475,8 @@ def analyze_stock(
             "status": "success",
             "data": {
                 "action": action,
+                "decision_trace": {**decision_trace, "data_quality": data_quality,
+                                   "confidence_cap": MAX_CONFIDENCE, "timeframe": timeframe},
                 "confidence_score": confidence,
                 "reason": (
                     f"Signal '{action}' generated. Trend: {trend}, "
