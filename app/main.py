@@ -144,6 +144,7 @@ def analyze_ticker_endpoint(
         action=Action(raw_data["action"].lower()),
         confidence_score=raw_data["confidence_score"],
         reason=raw_data["reason"],
+        decision_trace=raw_data.get("decision_trace") or {},
         current_price=raw_data.get("current_price"),
         indicators=raw_data.get("indicators"),
         data_quality=raw_data.get("data_quality"),
