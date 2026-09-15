@@ -10,13 +10,13 @@ import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
 
-from risk_controls import calculate_atr, calculate_stop_levels
-
 try:
+    from .risk_controls import calculate_atr, calculate_stop_levels
     from .signal_decision import evaluate_signal
     from .data_quality import assess_data_quality
     from .liquidity_evidence import build_liquidity_evidence
 except ImportError:
+    from risk_controls import calculate_atr, calculate_stop_levels
     from signal_decision import evaluate_signal
     from data_quality import assess_data_quality
     from liquidity_evidence import build_liquidity_evidence
