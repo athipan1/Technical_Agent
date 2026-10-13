@@ -61,6 +61,24 @@ def evaluate_signal(row):
     buy_passed = valid and all(item["passed"] for item in buy)
     sell_passed = valid and price < sma and rsi > 70 and macd < signal
     action = "buy" if buy_passed else "sell" if sell_passed else "hold"
+    # Hypothesis only: trend + MACD can agree while the established
+    # oversold-RSI BUY gate legitimately blocks execution. Never convert
+    # this observation into an order signal or modify the BUY thresholds.
+    trend_momentum_observation = bool(
+        valid and buy[0]["passed"] and buy[2]["passed"] and not buy[1]["passed"]
+    )
+    research_observation = {
+        "schema_version": "technical-research-observation.v1",
+        "observation_only": True,
+        "execution_authorized": False,
+        "strategy_promoted": False,
+        "trend_momentum_without_oversold_rsi": trend_momentum_observation,
+        "hypothesis": "evaluate_trend_momentum_nested_oos"
+        if trend_momentum_observation else None,
+        "failed_buy_predicates": [
+            item["reason_code"] for item in buy if not item["passed"]
+        ] if valid else ["TECHNICAL_INPUT_INVALID"],
+    }
     return {
         "schema_version": "technical-decision-trace.v1",
         "action": action,
@@ -78,4 +96,5 @@ def evaluate_signal(row):
             else [item["reason_code"] for item in buy if not item["passed"]]
         ),
         "fallback_used": not bool(valid),
+        "research_observation": research_observation,
     }
