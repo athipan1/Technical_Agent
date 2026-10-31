@@ -67,9 +67,36 @@ def evaluate_signal(row):
     trend_momentum_observation = bool(
         valid and buy[0]["passed"] and buy[2]["passed"] and not buy[1]["passed"]
     )
+    # Independent research hypotheses. These are intentionally non-binding:
+    # they cannot change action, confidence, or the production BUY predicates.
+    trend_following = bool(
+        valid and price > sma and 50 <= rsi <= 70 and macd > signal
+    )
+    mean_reversion = bool(
+        valid and price < sma and rsi < 30 and macd > signal
+    )
+    research_strategies = {
+        "trend_following": {
+            "candidate": trend_following,
+            "predicates": {
+                "price_above_sma200": bool(valid and price > sma),
+                "rsi_between_50_and_70": bool(valid and 50 <= rsi <= 70),
+                "macd_bullish": bool(valid and macd > signal),
+            },
+        },
+        "mean_reversion": {
+            "candidate": mean_reversion,
+            "predicates": {
+                "price_below_sma200": bool(valid and price < sma),
+                "rsi_oversold": bool(valid and rsi < 30),
+                "macd_recovery": bool(valid and macd > signal),
+            },
+        },
+    }
     research_observation = {
         "schema_version": "technical-research-observation.v1",
         "observation_only": True,
+        "research_strategies": research_strategies,
         "execution_authorized": False,
         "strategy_promoted": False,
         "trend_momentum_without_oversold_rsi": trend_momentum_observation,
