@@ -67,3 +67,30 @@ def test_invalid_inputs_cannot_create_trend_momentum_observation():
     assert trace["research_observation"]["failed_buy_predicates"] == [
         "TECHNICAL_INPUT_INVALID"
     ]
+
+
+@pytest.mark.parametrize(
+    "changes,expected_strategy",
+    [
+        ({"RSI_14": 60}, "trend_following"),
+        ({"Close": 95, "RSI_14": 25}, "mean_reversion"),
+    ],
+)
+def test_independent_research_candidates_never_authorize_orders(changes, expected_strategy):
+    trace = evaluate_signal(candle(**changes))
+    research = trace["research_observation"]
+    assert research["research_strategies"][expected_strategy]["candidate"] is True
+    assert research["observation_only"] is True
+    assert research["execution_authorized"] is False
+    assert research["strategy_promoted"] is False
+    assert trace["action"] == "hold"
+    assert trace["buy_passed"] is False
+
+
+def test_invalid_data_cannot_qualify_any_research_strategy():
+    trace = evaluate_signal(candle(Close=float("nan")))
+    assert trace["action"] == "hold"
+    assert all(
+        not strategy["candidate"]
+        for strategy in trace["research_observation"]["research_strategies"].values()
+    )
